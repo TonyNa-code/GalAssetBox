@@ -1,0 +1,50 @@
+{
+  "name": "galassetbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first galgame asset organizer with authorized plugin support.",
+  "author": "GalAssetBox Contributors",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check src/plugin-host.js && node --check src/authorized-plugins.js && node --check src/app.js && node --check examples/external-demo-plugin.gabplugin.js && node --check examples/plugin-package-demo/plugin.gabplugin.js",
+    "release:check": "npm run check && node scripts/release-check.js",
+    "pack": "electron-builder --dir",
+    "pack:win": "electron-builder --win --dir",
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
+  },
+  "devDependencies": {
+    "electron": "42.0.1",
+    "electron-builder": "26.8.1"
+  },
+  "build": {
+    "appId": "local.galassetbox.app",
+    "productName": "GalAssetBox",
+    "files": [
+      "index.html",
+      "src/**/*",
+      "electron/**/*",
+      "docs/**/*",
+      "examples/**/*",
+      "README.md",
+      "LICENSE*"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility"
+    }
+  }
+}

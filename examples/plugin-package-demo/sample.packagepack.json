@@ -1,0 +1,9 @@
+{
+  "format": "GalAssetBox.packageDemo.v1",
+  "title": "Package demo pack",
+  "items": [
+    "cg/demo_event.png",
+    "bg/demo_room.png",
+    "scenario/demo.txt"
+  ]
+}

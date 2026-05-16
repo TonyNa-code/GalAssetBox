@@ -1,0 +1,17 @@
+{
+  "format": "GalAssetBox.authorizedPack.v1",
+  "title": "Demo authorized pack",
+  "licenseNote": "This sample is generated for GalAssetBox plugin testing and contains no third-party game data.",
+  "files": [
+    {
+      "path": "09_文本脚本/demo_scene.txt",
+      "type": "text/plain;charset=utf-8",
+      "text": "这是一个自制授权包示例。实际插件只能用于你有权处理的项目。"
+    },
+    {
+      "path": "README_from_pack.txt",
+      "type": "text/plain;charset=utf-8",
+      "text": "GalAssetBox authorized pack demo. No DRM bypass, no third-party keys."
+    }
+  ]
+}

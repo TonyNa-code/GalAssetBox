@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GalAssetBox - Galgame 资源整理器</title>
+    <meta
+      name="description"
+      content="本地优先的 galgame 开放素材整理器，把明文图片、音频、视频和文本按类别复制到一个输出文件夹。"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23f5f4ef'/%3E%3Cpath d='M13 17h18v14H13zM33 17h18v14H33zM13 33h18v14H13zM33 33h18v14H33z' fill='%23fff' stroke='%2323272e' stroke-width='4'/%3E%3Cpath d='M19 24h6M39 40h6' stroke='%232f8d74' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace" aria-label="GalAssetBox workspace">
+        <aside class="control-pane">
+          <div class="brand-row">
+            <div class="brand-mark" aria-hidden="true">GAB</div>
+            <div>
+              <h1>GalAssetBox</h1>
+              <p>Galgame 资源整理器</p>
+            </div>
+          </div>
+
+          <section class="control-group">
+            <h2>文件夹</h2>
+            <button id="pickSourceButton" class="primary-action" type="button">
+              选择游戏文件夹
+            </button>
+            <button id="pickOutputButton" type="button">选择输出文件夹</button>
+            <div class="path-box">
+              <span>源目录</span>
+              <strong id="sourceName">未选择</strong>
+            </div>
+            <div class="path-box">
+              <span>输出到</span>
+              <strong id="outputName">未选择</strong>
+            </div>
+          </section>
+
+          <section class="control-group">
+            <h2>要整理的类型</h2>
+            <div id="categoryOptions" class="category-options"></div>
+          </section>
+
+          <section class="control-group">
+            <h2>模式</h2>
+            <div class="mode-switch" role="group" aria-label="界面模式">
+              <button id="beginnerModeButton" type="button">新手模式</button>
+              <button id="advancedModeButton" type="button">高级功能</button>
+            </div>
+            <p id="modeHelp" class="mode-help">只显示最常用的整理流程。</p>
+          </section>
+
+          <section class="control-group">
+            <h2>操作</h2>
+            <button id="scanButton" type="button">扫描素材</button>
+            <button id="organizeButton" class="primary-action" type="button">开始整理</button>
+            <div class="advanced-actions advanced-only">
+              <button id="runPluginsButton" type="button">运行授权插件</button>
+              <button id="importPluginButton" type="button">导入本地插件</button>
+              <button id="importPluginPackageButton" type="button">导入插件包</button>
+              <button id="helpSummaryButton" type="button">导出求助摘要</button>
+              <button id="manifestOnlyButton" type="button">只选文件生成清单</button>
+              <button id="sampleButton" type="button">载入样例</button>
+            </div>
+            <input id="importPluginInput" type="file" accept=".js,.gabplugin.js,text/javascript,application/javascript" hidden />
+            <input id="importPluginPackageInput" type="file" webkitdirectory multiple hidden />
+            <input id="manifestInput" type="file" webkitdirectory multiple hidden />
+          </section>
+
+          <div class="safety-note">
+            <strong>只处理本地开放文件</strong>
+            <span>不会上传、运行游戏、破解封包或绕过 DRM。</span>
+          </div>
+        </aside>
+
+        <section class="result-pane">
+          <header class="result-header">
+            <div>
+              <p class="eyebrow">Local organizer</p>
+              <h2 id="projectTitle">等待选择文件夹</h2>
+            </div>
+            <div id="statusPill" class="status-pill neutral">Ready</div>
+          </header>
+
+          <section class="summary-strip" aria-label="summary">
+            <div>
+              <span id="openAssetCount">0</span>
+              <small>开放素材</small>
+            </div>
+            <div>
+              <span id="copySize">0 B</span>
+              <small>预计复制</small>
+            </div>
+            <div>
+              <span id="archiveCount">0</span>
+              <small>封包提示</small>
+            </div>
+            <div>
+              <span id="textCount">0</span>
+              <small>文本脚本</small>
+            </div>
+          </section>
+
+          <section id="progressPanel" class="progress-panel" aria-live="polite">
+            <div>
+              <strong id="progressTitle">准备就绪</strong>
+              <span id="progressDetail">选择游戏文件夹后开始扫描。</span>
+            </div>
+            <div class="progress-track" aria-hidden="true">
+              <span id="progressBar"></span>
+            </div>
+          </section>
+
+          <nav class="tabs" aria-label="result views">
+            <button class="tab active" data-tab="overview" type="button">总览</button>
+            <button class="tab" data-tab="categories" type="button">分类</button>
+            <button class="tab" data-tab="archives" type="button">封包</button>
+            <button class="tab" data-tab="authorizedPlugins" type="button">插件</button>
+            <button class="tab" data-tab="log" type="button">日志</button>
+          </nav>
+
+          <section id="overviewPanel" class="tab-panel active" aria-live="polite"></section>
+          <section id="categoriesPanel" class="tab-panel" aria-live="polite"></section>
+          <section id="archivesPanel" class="tab-panel" aria-live="polite"></section>
+          <section id="authorizedPluginsPanel" class="tab-panel" aria-live="polite"></section>
+          <section id="logPanel" class="tab-panel" aria-live="polite"></section>
+        </section>
+      </section>
+    </main>
+
+    <template id="emptyTemplate">
+      <div class="empty-state">
+        <div class="empty-glyph" aria-hidden="true"></div>
+        <h3>先选择一个游戏文件夹</h3>
+        <p>GalAssetBox 会在本地扫描文件名、大小和开放格式，并按分类复制到你指定的输出文件夹。</p>
+      </div>
+    </template>
+
+    <script src="./src/plugin-host.js"></script>
+    <script src="./src/authorized-plugins.js"></script>
+    <script src="./src/app.js"></script>
+  </body>
+</html>

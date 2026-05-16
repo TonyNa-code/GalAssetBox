@@ -1,0 +1,16 @@
+{
+  "format": "GalAssetBox.pluginPackage.v1",
+  "id": "example.package-demo-authorized-pack",
+  "name": "插件包示例：授权 JSON 包",
+  "version": "0.1.0",
+  "main": "plugin.gabplugin.js",
+  "description": "演示 GalAssetBox 插件包目录结构，只处理 packagepack.json 示例格式。",
+  "author": "GalAssetBox demo",
+  "license": "MIT-0",
+  "safety": {
+    "requiresUserAuthorization": true,
+    "localOnly": true,
+    "noDrmBypass": true,
+    "noBundledThirdPartyKeys": true
+  }
+}
