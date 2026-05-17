@@ -112,24 +112,33 @@
               <strong id="progressTitle">准备就绪</strong>
               <span id="progressDetail">选择游戏文件夹后开始扫描。</span>
             </div>
-            <div class="progress-track" aria-hidden="true">
+            <div
+              id="progressTrack"
+              class="progress-track"
+              role="progressbar"
+              aria-labelledby="progressTitle"
+              aria-describedby="progressDetail"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
               <span id="progressBar"></span>
             </div>
           </section>
 
-          <nav class="tabs" aria-label="result views">
-            <button class="tab active" data-tab="overview" type="button">总览</button>
-            <button class="tab" data-tab="categories" type="button">分类</button>
-            <button class="tab" data-tab="archives" type="button">封包</button>
-            <button class="tab" data-tab="authorizedPlugins" type="button">插件</button>
-            <button class="tab" data-tab="log" type="button">日志</button>
+          <nav class="tabs" aria-label="result views" role="tablist" aria-orientation="horizontal">
+            <button class="tab active" id="tab-overview" data-tab="overview" type="button" role="tab" aria-controls="overviewPanel" aria-selected="true">总览</button>
+            <button class="tab" id="tab-categories" data-tab="categories" type="button" role="tab" aria-controls="categoriesPanel" aria-selected="false" tabindex="-1">分类</button>
+            <button class="tab" id="tab-archives" data-tab="archives" type="button" role="tab" aria-controls="archivesPanel" aria-selected="false" tabindex="-1">封包</button>
+            <button class="tab" id="tab-authorizedPlugins" data-tab="authorizedPlugins" type="button" role="tab" aria-controls="authorizedPluginsPanel" aria-selected="false" tabindex="-1">插件</button>
+            <button class="tab" id="tab-log" data-tab="log" type="button" role="tab" aria-controls="logPanel" aria-selected="false" tabindex="-1">日志</button>
           </nav>
 
-          <section id="overviewPanel" class="tab-panel active" aria-live="polite"></section>
-          <section id="categoriesPanel" class="tab-panel" aria-live="polite"></section>
-          <section id="archivesPanel" class="tab-panel" aria-live="polite"></section>
-          <section id="authorizedPluginsPanel" class="tab-panel" aria-live="polite"></section>
-          <section id="logPanel" class="tab-panel" aria-live="polite"></section>
+          <section id="overviewPanel" class="tab-panel active" role="tabpanel" aria-labelledby="tab-overview" aria-live="polite" tabindex="0"></section>
+          <section id="categoriesPanel" class="tab-panel" role="tabpanel" aria-labelledby="tab-categories" aria-live="polite" tabindex="0" hidden></section>
+          <section id="archivesPanel" class="tab-panel" role="tabpanel" aria-labelledby="tab-archives" aria-live="polite" tabindex="0" hidden></section>
+          <section id="authorizedPluginsPanel" class="tab-panel" role="tabpanel" aria-labelledby="tab-authorizedPlugins" aria-live="polite" tabindex="0" hidden></section>
+          <section id="logPanel" class="tab-panel" role="tabpanel" aria-labelledby="tab-log" aria-live="polite" tabindex="0" hidden></section>
         </section>
       </section>
     </main>

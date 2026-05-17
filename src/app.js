@@ -26,6 +26,7 @@ const textCount = document.querySelector("#textCount");
 const progressPanel = document.querySelector("#progressPanel");
 const progressTitle = document.querySelector("#progressTitle");
 const progressDetail = document.querySelector("#progressDetail");
+const progressTrack = document.querySelector("#progressTrack");
 const progressBar = document.querySelector("#progressBar");
 const overviewPanel = document.querySelector("#overviewPanel");
 const categoriesPanel = document.querySelector("#categoriesPanel");
@@ -166,9 +167,12 @@ function nowStamp() {
 }
 
 function setProgress(title, detail, progress = 0, tone = "neutral") {
+  const boundedProgress = Math.max(0, Math.min(100, progress));
   progressTitle.textContent = title;
   progressDetail.textContent = detail;
-  progressBar.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+  progressTrack.setAttribute("aria-valuenow", String(Math.round(boundedProgress)));
+  progressTrack.setAttribute("aria-valuetext", `${Math.round(boundedProgress)}%`);
+  progressBar.style.width = `${boundedProgress}%`;
   progressPanel.className = `progress-panel ${tone}`;
 }
 
@@ -2270,12 +2274,44 @@ categoriesPanel.addEventListener("keydown", (event) => {
   addCustomCategoryRule(event.target.value, categorySelect.value);
 });
 
+function activateTab(tab, shouldFocus = false) {
+  const targetPanel = document.querySelector(`#${tab.dataset.tab}Panel`);
+  if (!(targetPanel instanceof HTMLElement)) return;
+
+  document.querySelectorAll(".tab").forEach((button) => {
+    const isActive = button === tab;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+    button.tabIndex = isActive ? 0 : -1;
+  });
+
+  document.querySelectorAll(".tab-panel").forEach((panel) => {
+    const isActive = panel === targetPanel;
+    panel.classList.toggle("active", isActive);
+    panel.hidden = !isActive;
+  });
+
+  if (shouldFocus) tab.focus();
+}
+
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((button) => button.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.remove("active"));
-    tab.classList.add("active");
-    document.querySelector(`#${tab.dataset.tab}Panel`).classList.add("active");
+    activateTab(tab);
+  });
+
+  tab.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = [...document.querySelectorAll(".tab")];
+    const currentIndex = tabs.indexOf(tab);
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : event.key === "ArrowRight"
+          ? (currentIndex + 1) % tabs.length
+          : (currentIndex - 1 + tabs.length) % tabs.length;
+    activateTab(tabs[nextIndex], true);
   });
 });
 
