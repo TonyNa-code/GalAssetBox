@@ -32,13 +32,15 @@
               选择游戏文件夹
             </button>
             <button id="pickOutputButton" type="button">选择输出文件夹</button>
-            <div class="path-box">
+            <div id="sourcePathBox" class="path-box" data-state="empty">
               <span>源目录</span>
               <strong id="sourceName">未选择</strong>
+              <em id="sourceState">待选择</em>
             </div>
-            <div class="path-box">
+            <div id="outputPathBox" class="path-box" data-state="empty">
               <span>输出到</span>
               <strong id="outputName">未选择</strong>
+              <em id="outputState">待选择</em>
             </div>
           </section>
 
@@ -58,8 +60,8 @@
 
           <section class="control-group">
             <h2>操作</h2>
-            <button id="scanButton" type="button">扫描素材</button>
-            <button id="organizeButton" class="primary-action" type="button">开始整理</button>
+            <button id="scanButton" type="button" aria-describedby="actionHint">扫描素材</button>
+            <button id="organizeButton" class="primary-action" type="button" aria-describedby="actionHint">开始整理</button>
             <div class="advanced-actions advanced-only">
               <button id="runPluginsButton" type="button">运行授权插件</button>
               <button id="importPluginButton" type="button">导入本地插件</button>
@@ -68,6 +70,7 @@
               <button id="manifestOnlyButton" type="button">只选文件生成清单</button>
               <button id="sampleButton" type="button">载入样例</button>
             </div>
+            <p id="actionHint" class="action-hint" data-state="blocked">先选择游戏文件夹。</p>
             <input id="importPluginInput" type="file" accept=".js,.gabplugin.js,text/javascript,application/javascript" hidden />
             <input id="importPluginPackageInput" type="file" webkitdirectory multiple hidden />
             <input id="manifestInput" type="file" webkitdirectory multiple hidden />

@@ -11,11 +11,16 @@ const sampleButton = document.querySelector("#sampleButton");
 const beginnerModeButton = document.querySelector("#beginnerModeButton");
 const advancedModeButton = document.querySelector("#advancedModeButton");
 const modeHelp = document.querySelector("#modeHelp");
+const actionHint = document.querySelector("#actionHint");
 const importPluginInput = document.querySelector("#importPluginInput");
 const importPluginPackageInput = document.querySelector("#importPluginPackageInput");
 const manifestInput = document.querySelector("#manifestInput");
 const sourceName = document.querySelector("#sourceName");
 const outputName = document.querySelector("#outputName");
+const sourcePathBox = document.querySelector("#sourcePathBox");
+const outputPathBox = document.querySelector("#outputPathBox");
+const sourceState = document.querySelector("#sourceState");
+const outputState = document.querySelector("#outputState");
 const categoryOptions = document.querySelector("#categoryOptions");
 const projectTitle = document.querySelector("#projectTitle");
 const statusPill = document.querySelector("#statusPill");
@@ -216,6 +221,48 @@ function updateActionState() {
   helpSummaryButton.disabled = busy || !currentRecords.length;
   beginnerModeButton.disabled = busy;
   advancedModeButton.disabled = busy;
+  updateFolderStatus(hasSource, hasOutput);
+  updateActionHint(hasSource, hasOutput);
+}
+
+function updateFolderStatus(hasSource, hasOutput) {
+  const sourceLabel = sourceName.textContent.trim();
+  const sourcePreview = sourceLabel === "样例" || sourceLabel === "清单模式";
+  sourcePathBox.dataset.state = hasSource ? "ready" : sourcePreview ? "preview" : "empty";
+  outputPathBox.dataset.state = hasOutput ? "ready" : "empty";
+  sourceState.textContent = hasSource ? "已选择" : sourcePreview ? "预览模式" : "待选择";
+  outputState.textContent = hasOutput ? "已选择" : "整理前选择";
+}
+
+function updateActionHint(hasSource, hasOutput) {
+  const sourceLabel = sourceName.textContent.trim();
+  const isPreview = sourceLabel === "样例" || sourceLabel === "清单模式";
+  const hasRecords = currentRecords.length > 0;
+  let state = "blocked";
+  let message = "先选择游戏文件夹。";
+
+  if (busy) {
+    state = "busy";
+    message = "正在处理当前任务，请稍等。";
+  } else if (sourceLabel === "样例") {
+    state = "preview";
+    message = "当前是样例预览；整理真实素材前请先选择游戏文件夹。";
+  } else if (sourceLabel === "清单模式" || (!hasSource && hasRecords)) {
+    state = "preview";
+    message = "当前来自文件清单；可导出求助摘要，直接整理需选择真实源目录。";
+  } else if (hasSource && !hasRecords) {
+    state = "ready";
+    message = "源目录已选择，下一步扫描素材。";
+  } else if (hasSource && hasRecords && !hasOutput) {
+    state = "warn";
+    message = "扫描完成；选择输出文件夹后即可开始整理。";
+  } else if (hasSource && hasOutput) {
+    state = "ready";
+    message = hasRecords ? "准备就绪，可以开始整理。" : "文件夹已选择，先扫描素材。";
+  }
+
+  actionHint.dataset.state = state;
+  actionHint.textContent = message;
 }
 
 function loadUiMode() {
