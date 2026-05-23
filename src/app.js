@@ -21,7 +21,10 @@ const sourcePathBox = document.querySelector("#sourcePathBox");
 const outputPathBox = document.querySelector("#outputPathBox");
 const sourceState = document.querySelector("#sourceState");
 const outputState = document.querySelector("#outputState");
+const categoryPresets = document.querySelector("#categoryPresets");
+const categoryPresetHint = document.querySelector("#categoryPresetHint");
 const categoryOptions = document.querySelector("#categoryOptions");
+const categorySelectionSummary = document.querySelector("#categorySelectionSummary");
 const projectTitle = document.querySelector("#projectTitle");
 const statusPill = document.querySelector("#statusPill");
 const openAssetCount = document.querySelector("#openAssetCount");
@@ -61,6 +64,7 @@ const MAX_PLUGIN_FILE_BYTES = 1024 * 1024;
 const MAX_PLUGIN_PACKAGE_BYTES = 2 * 1024 * 1024;
 const UI_MODE_STORAGE_KEY = "GalAssetBox.ui.mode.v1";
 const CUSTOM_RULES_STORAGE_KEY = "GalAssetBox.category.rules.v1";
+const CATEGORY_SELECTION_STORAGE_KEY = "GalAssetBox.category.selection.v1";
 const PLUGIN_PACKAGE_SAFETY_FLAGS = [
   "requiresUserAuthorization",
   "localOnly",
@@ -79,6 +83,14 @@ const CATEGORY_DEFS = [
   { id: "video", label: "视频", folder: "08_视频", defaultEnabled: true },
   { id: "text", label: "文本脚本", folder: "09_文本脚本", defaultEnabled: true },
 ];
+
+const CATEGORY_PRESETS = {
+  all: CATEGORY_DEFS.map((category) => category.id),
+  images: ["cg", "sprites", "backgrounds", "images"],
+  audio: ["music", "voice", "sound"],
+  video: ["video"],
+  text: ["text"],
+};
 
 const CATEGORY_BY_ID = new Map(CATEGORY_DEFS.map((category) => [category.id, category]));
 let customCategoryRules = loadCustomCategoryRules();
@@ -201,6 +213,7 @@ function setBusy(isBusy) {
     sampleButton,
     beginnerModeButton,
     advancedModeButton,
+    ...categoryPresets.querySelectorAll("button"),
   ].forEach((button) => {
     button.disabled = isBusy;
   });
@@ -211,10 +224,12 @@ function updateActionState() {
   const hasDirectoryPicker = "showDirectoryPicker" in window;
   const hasSource = Boolean(sourceHandle || desktopSource);
   const hasOutput = Boolean(outputHandle || desktopOutput);
+  const selectedCopyCount = getSelectedCopyRecords().length;
+  const hasSelectedCopyRecords = !currentRecords.length || selectedCopyCount > 0;
   pickSourceButton.disabled = busy || (!hasDirectoryPicker && !desktopBridge);
   pickOutputButton.disabled = busy || (!hasDirectoryPicker && !desktopBridge);
   scanButton.disabled = busy || !hasSource;
-  organizeButton.disabled = busy || !hasSource || !hasOutput;
+  organizeButton.disabled = busy || !hasSource || !hasOutput || !hasSelectedCopyRecords;
   runPluginsButton.disabled = busy || !hasSource || !hasOutput;
   importPluginButton.disabled = busy;
   importPluginPackageButton.disabled = busy;
@@ -223,6 +238,18 @@ function updateActionState() {
   advancedModeButton.disabled = busy;
   updateFolderStatus(hasSource, hasOutput);
   updateActionHint(hasSource, hasOutput);
+  updatePrimaryActionLabels(hasSource, selectedCopyCount);
+}
+
+function updatePrimaryActionLabels(hasSource, selectedCopyCount) {
+  scanButton.textContent = hasSource && currentRecords.length ? "重新扫描素材" : "扫描素材";
+  if (!hasSource || !currentRecords.length) {
+    organizeButton.textContent = "开始整理";
+  } else if (!selectedCopyCount) {
+    organizeButton.textContent = "无可整理素材";
+  } else {
+    organizeButton.textContent = `整理 ${formatNumber(selectedCopyCount)} 个素材`;
+  }
 }
 
 function updateFolderStatus(hasSource, hasOutput) {
@@ -238,6 +265,7 @@ function updateActionHint(hasSource, hasOutput) {
   const sourceLabel = sourceName.textContent.trim();
   const isPreview = sourceLabel === "样例" || sourceLabel === "清单模式";
   const hasRecords = currentRecords.length > 0;
+  const selectedCopyCount = hasRecords ? getSelectedCopyRecords().length : 0;
   let state = "blocked";
   let message = "先选择游戏文件夹。";
 
@@ -253,6 +281,9 @@ function updateActionHint(hasSource, hasOutput) {
   } else if (hasSource && !hasRecords) {
     state = "ready";
     message = "源目录已选择，下一步扫描素材。";
+  } else if (hasSource && hasRecords && !selectedCopyCount) {
+    state = "blocked";
+    message = "当前勾选类型里没有可整理素材，请重新勾选类型或查看封包提示。";
   } else if (hasSource && hasRecords && !hasOutput) {
     state = "warn";
     message = "扫描完成；选择输出文件夹后即可开始整理。";
@@ -443,6 +474,145 @@ function selectedCategoryIds() {
   );
 }
 
+function defaultCategoryIds() {
+  return CATEGORY_DEFS
+    .filter((category) => category.defaultEnabled)
+    .map((category) => category.id);
+}
+
+function loadCategorySelection() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CATEGORY_SELECTION_STORAGE_KEY) || "null");
+    if (!Array.isArray(parsed)) return new Set(defaultCategoryIds());
+    const validIds = new Set(CATEGORY_DEFS.map((category) => category.id));
+    return new Set(parsed.filter((id) => validIds.has(id)));
+  } catch {
+    return new Set(defaultCategoryIds());
+  }
+}
+
+function saveCategorySelection() {
+  try {
+    window.localStorage.setItem(CATEGORY_SELECTION_STORAGE_KEY, JSON.stringify([...selectedCategoryIds()]));
+  } catch {
+    // Category selection is a convenience preference; the app still works without storage.
+  }
+}
+
+function getFilledCategoryIds() {
+  const metrics = getCategoryMetrics();
+  return CATEGORY_DEFS
+    .filter((category) => (metrics.get(category.id)?.count || 0) > 0)
+    .map((category) => category.id);
+}
+
+function getCategoryPresetIds(presetId) {
+  if (presetId === "filled") return getFilledCategoryIds();
+  return CATEGORY_PRESETS[presetId] || [];
+}
+
+function setSelectedCategoryIds(ids) {
+  const selectedIds = new Set(ids);
+  categoryOptions.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.checked = selectedIds.has(input.value);
+  });
+}
+
+function sameSet(left, right) {
+  if (left.size !== right.size) return false;
+  for (const value of left) {
+    if (!right.has(value)) return false;
+  }
+  return true;
+}
+
+function updateCategoryPresetState() {
+  const selectedIds = selectedCategoryIds();
+  let activeLabel = "";
+  categoryPresets.querySelectorAll("[data-category-preset]").forEach((button) => {
+    const presetId = button.dataset.categoryPreset || "";
+    const presetIds = new Set(getCategoryPresetIds(presetId));
+    const unavailable = presetId === "filled" && !currentRecords.length;
+    const active = !unavailable && sameSet(selectedIds, presetIds);
+    button.disabled = busy || unavailable;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    if (active) activeLabel = button.textContent.trim();
+  });
+  if (!selectedIds.size) {
+    categoryPresetHint.dataset.state = "blocked";
+    categoryPresetHint.textContent = "当前：未选择类型";
+  } else if (activeLabel) {
+    categoryPresetHint.dataset.state = "preset";
+    categoryPresetHint.textContent = `当前预设：${activeLabel}`;
+  } else {
+    categoryPresetHint.dataset.state = "custom";
+    categoryPresetHint.textContent = "当前：自定义选择";
+  }
+}
+
+function applyCategoryPreset(presetId) {
+  const ids = getCategoryPresetIds(presetId);
+  if (!ids.length) {
+    if (presetId === "filled") showToast("扫描后才能选择有素材类型");
+    return;
+  }
+  setSelectedCategoryIds(ids);
+  saveCategorySelection();
+  updateActionState();
+  render();
+}
+
+function getCategoryMetrics() {
+  const metrics = new Map(CATEGORY_DEFS.map((definition) => [
+    definition.id,
+    { count: 0, size: 0 },
+  ]));
+  for (const record of currentRecords) {
+    const metric = metrics.get(record.category.id);
+    if (!metric) continue;
+    metric.count += 1;
+    metric.size += record.size;
+  }
+  return metrics;
+}
+
+function updateCategoryOptionMetrics() {
+  const metrics = getCategoryMetrics();
+  for (const definition of CATEGORY_DEFS) {
+    const option = categoryOptions.querySelector(`[data-category-option="${definition.id}"]`);
+    if (!(option instanceof HTMLElement)) continue;
+    const count = option.querySelector("[data-category-count]");
+    const size = option.querySelector("[data-category-size]");
+    const metric = metrics.get(definition.id) || { count: 0, size: 0 };
+    option.dataset.empty = metric.count ? "false" : "true";
+    if (count) count.textContent = formatNumber(metric.count);
+    if (size) size.textContent = metric.count ? formatBytes(metric.size) : "0 B";
+  }
+}
+
+function updateCategorySelectionSummary() {
+  const copyRecords = currentRecords.filter((record) => record.category.copy);
+  const selected = getSelectedCopyRecords();
+  const selectedSize = selected.reduce((sum, record) => sum + record.size, 0);
+  const excluded = copyRecords.length - selected.length;
+  let state = "empty";
+  let message = "扫描后显示当前勾选类型的预计复制量。";
+
+  if (currentRecords.length && selected.length) {
+    state = excluded ? "partial" : "ready";
+    message = `当前会复制 ${formatNumber(selected.length)} 个开放素材，约 ${formatBytes(selectedSize)}`;
+    if (excluded) message += `；已排除 ${formatNumber(excluded)} 个未勾选类型。`;
+    else message += "。";
+  } else if (currentRecords.length) {
+    state = "blocked";
+    message = "当前勾选类型里没有可复制素材，可以重新勾选或检查分类规则。";
+  }
+
+  categorySelectionSummary.dataset.state = state;
+  categorySelectionSummary.textContent = message;
+}
+
 function getAuthorizedPlugins() {
   return window.GalAssetBoxPluginHost?.getPlugins?.() || [];
 }
@@ -498,15 +668,27 @@ function getTransformPluginMatches(records) {
 }
 
 function renderCategoryOptions() {
+  const savedCategoryIds = loadCategorySelection();
   categoryOptions.innerHTML = CATEGORY_DEFS.map(
     (category) => `
-      <label class="category-toggle">
-        <input type="checkbox" value="${category.id}" ${category.defaultEnabled ? "checked" : ""} />
-        <span>${category.label}</span>
+      <label class="category-toggle" data-category-option="${escapeHtml(category.id)}" data-empty="true">
+        <input type="checkbox" value="${category.id}" ${savedCategoryIds.has(category.id) ? "checked" : ""} />
+        <span class="category-label">${escapeHtml(category.label)}</span>
+        <span class="category-meta">
+          <strong data-category-count="${escapeHtml(category.id)}">0</strong>
+          <em data-category-size="${escapeHtml(category.id)}">0 B</em>
+        </span>
       </label>
     `,
   ).join("");
-  categoryOptions.addEventListener("change", render);
+  categoryOptions.addEventListener("change", () => {
+    saveCategorySelection();
+    updateActionState();
+    render();
+  });
+  updateCategoryOptionMetrics();
+  updateCategoryPresetState();
+  updateCategorySelectionSummary();
 }
 
 async function pickSource() {
@@ -1606,6 +1788,9 @@ function summarizeRecords(records) {
 }
 
 function render() {
+  updateCategoryOptionMetrics();
+  updateCategoryPresetState();
+  updateCategorySelectionSummary();
   if (!currentRecords.length) {
     renderEmpty();
     return;
@@ -1629,6 +1814,9 @@ function render() {
 }
 
 function renderEmpty() {
+  updateCategoryOptionMetrics();
+  updateCategoryPresetState();
+  updateCategorySelectionSummary();
   const empty = emptyTemplate.innerHTML;
   openAssetCount.textContent = "0";
   copySize.textContent = "0 B";
@@ -2238,6 +2426,13 @@ organizeButton.addEventListener("click", () => {
 
 runPluginsButton.addEventListener("click", () => {
   void runAuthorizedPlugins();
+});
+
+categoryPresets.addEventListener("click", (event) => {
+  if (!(event.target instanceof HTMLElement)) return;
+  const button = event.target.closest("[data-category-preset]");
+  if (!(button instanceof HTMLElement)) return;
+  applyCategoryPreset(button.dataset.categoryPreset || "");
 });
 
 importPluginButton.addEventListener("click", () => importPluginInput.click());

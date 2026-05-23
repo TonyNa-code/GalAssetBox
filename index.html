@@ -46,7 +46,19 @@
 
           <section class="control-group">
             <h2>要整理的类型</h2>
+            <div id="categoryPresets" class="category-presets" aria-label="快速选择素材类型">
+              <button type="button" data-category-preset="all">全部</button>
+              <button type="button" data-category-preset="filled">有素材</button>
+              <button type="button" data-category-preset="images">图片</button>
+              <button type="button" data-category-preset="audio">音频</button>
+              <button type="button" data-category-preset="video">视频</button>
+              <button type="button" data-category-preset="text">文本</button>
+            </div>
+            <p id="categoryPresetHint" class="category-preset-hint" data-state="preset">当前预设：全部</p>
             <div id="categoryOptions" class="category-options"></div>
+            <p id="categorySelectionSummary" class="category-selection-summary" data-state="empty">
+              扫描后显示当前勾选类型的预计复制量。
+            </p>
           </section>
 
           <section class="control-group">
