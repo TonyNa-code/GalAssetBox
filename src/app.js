@@ -10,6 +10,7 @@ const manifestOnlyButton = document.querySelector("#manifestOnlyButton");
 const sampleButton = document.querySelector("#sampleButton");
 const beginnerModeButton = document.querySelector("#beginnerModeButton");
 const advancedModeButton = document.querySelector("#advancedModeButton");
+const modeSwitch = document.querySelector("#modeSwitch");
 const modeHelp = document.querySelector("#modeHelp");
 const actionHint = document.querySelector("#actionHint");
 const importPluginInput = document.querySelector("#importPluginInput");
@@ -561,6 +562,20 @@ function applyCategoryPreset(presetId) {
   saveCategorySelection();
   updateActionState();
   render();
+}
+
+function moveFocusInButtonGroup(group, currentButton, key) {
+  const buttons = [...group.querySelectorAll("button")].filter((button) => !button.disabled);
+  if (!buttons.length) return;
+  const currentIndex = Math.max(0, buttons.indexOf(currentButton));
+  const nextIndex = key === "Home"
+    ? 0
+    : key === "End"
+      ? buttons.length - 1
+      : key === "ArrowRight" || key === "ArrowDown"
+        ? (currentIndex + 1) % buttons.length
+        : (currentIndex - 1 + buttons.length) % buttons.length;
+  buttons[nextIndex].focus();
 }
 
 function getCategoryMetrics() {
@@ -2448,6 +2463,13 @@ categoryPresets.addEventListener("click", (event) => {
   applyCategoryPreset(button.dataset.categoryPreset || "");
 });
 
+categoryPresets.addEventListener("keydown", (event) => {
+  if (!(event.target instanceof HTMLButtonElement)) return;
+  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  moveFocusInButtonGroup(categoryPresets, event.target, event.key);
+});
+
 importPluginButton.addEventListener("click", () => importPluginInput.click());
 importPluginPackageButton.addEventListener("click", () => importPluginPackageInput.click());
 helpSummaryButton.addEventListener("click", () => downloadHelpSummary());
@@ -2492,6 +2514,13 @@ beginnerModeButton.addEventListener("click", () => {
 
 advancedModeButton.addEventListener("click", () => {
   setUiMode("advanced");
+});
+
+modeSwitch.addEventListener("keydown", (event) => {
+  if (!(event.target instanceof HTMLButtonElement)) return;
+  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  moveFocusInButtonGroup(modeSwitch, event.target, event.key);
 });
 
 overviewPanel.addEventListener("click", (event) => {

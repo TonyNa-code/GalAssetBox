@@ -46,7 +46,7 @@
 
           <section class="control-group">
             <h2>要整理的类型</h2>
-            <div id="categoryPresets" class="category-presets" aria-label="快速选择素材类型">
+            <div id="categoryPresets" class="category-presets" role="group" aria-label="快速选择素材类型">
               <button type="button" data-category-preset="all">全部</button>
               <button type="button" data-category-preset="filled">有素材</button>
               <button type="button" data-category-preset="images">图片</button>
@@ -54,16 +54,18 @@
               <button type="button" data-category-preset="video">视频</button>
               <button type="button" data-category-preset="text">文本</button>
             </div>
-            <p id="categoryPresetHint" class="category-preset-hint" data-state="preset">当前预设：全部</p>
+            <p id="categoryPresetHint" class="category-preset-hint" data-state="preset" aria-live="polite">
+              当前预设：全部
+            </p>
             <div id="categoryOptions" class="category-options"></div>
-            <p id="categorySelectionSummary" class="category-selection-summary" data-state="empty">
+            <p id="categorySelectionSummary" class="category-selection-summary" data-state="empty" aria-live="polite">
               扫描后显示当前勾选类型的预计复制量。
             </p>
           </section>
 
           <section class="control-group">
             <h2>模式</h2>
-            <div class="mode-switch" role="group" aria-label="界面模式">
+            <div id="modeSwitch" class="mode-switch" role="group" aria-label="界面模式">
               <button id="beginnerModeButton" type="button">新手模式</button>
               <button id="advancedModeButton" type="button">高级功能</button>
             </div>
@@ -82,7 +84,7 @@
               <button id="manifestOnlyButton" type="button">只选文件生成清单</button>
               <button id="sampleButton" type="button">载入样例</button>
             </div>
-            <p id="actionHint" class="action-hint" data-state="blocked">先选择游戏文件夹。</p>
+            <p id="actionHint" class="action-hint" data-state="blocked" aria-live="polite">先选择游戏文件夹。</p>
             <input id="importPluginInput" type="file" accept=".js,.gabplugin.js,text/javascript,application/javascript" hidden />
             <input id="importPluginPackageInput" type="file" webkitdirectory multiple hidden />
             <input id="manifestInput" type="file" webkitdirectory multiple hidden />
