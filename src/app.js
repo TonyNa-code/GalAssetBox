@@ -27,7 +27,7 @@ const categoryOptions = document.querySelector("#categoryOptions");
 const categorySelectionSummary = document.querySelector("#categorySelectionSummary");
 const projectTitle = document.querySelector("#projectTitle");
 const statusPill = document.querySelector("#statusPill");
-const openAssetCount = document.querySelector("#openAssetCount");
+const selectedAssetCount = document.querySelector("#selectedAssetCount");
 const copySize = document.querySelector("#copySize");
 const archiveCount = document.querySelector("#archiveCount");
 const textCount = document.querySelector("#textCount");
@@ -1783,14 +1783,20 @@ function countBy(items, getter) {
 
 function summarizeRecords(records) {
   const copyRecords = records.filter((record) => record.category.copy);
+  const selectedIds = selectedCategoryIds();
+  const selectedRecords = copyRecords.filter((record) => selectedIds.has(record.category.id));
   const archives = records.filter((record) => record.category.id === "archive");
-  return `${formatNumber(copyRecords.length)} 个开放素材，${formatNumber(archives.length)} 个封包提示。`;
+  if (selectedRecords.length === copyRecords.length) {
+    return `将整理 ${formatNumber(selectedRecords.length)} 个开放素材，${formatNumber(archives.length)} 个封包提示。`;
+  }
+  return `将整理 ${formatNumber(selectedRecords.length)} 个，开放素材共 ${formatNumber(copyRecords.length)} 个，${formatNumber(archives.length)} 个封包提示。`;
 }
 
 function render() {
   updateCategoryOptionMetrics();
   updateCategoryPresetState();
   updateCategorySelectionSummary();
+  updateCompletedScanProgressSummary();
   if (!currentRecords.length) {
     renderEmpty();
     return;
@@ -1801,7 +1807,7 @@ function render() {
   const texts = currentRecords.filter((record) => record.category.id === "text");
   const totalSize = selected.reduce((sum, record) => sum + record.size, 0);
 
-  openAssetCount.textContent = formatNumber(currentRecords.filter((record) => record.category.copy).length);
+  selectedAssetCount.textContent = formatNumber(selected.length);
   copySize.textContent = formatBytes(totalSize);
   archiveCount.textContent = formatNumber(archives.length);
   textCount.textContent = formatNumber(texts.length);
@@ -1813,12 +1819,19 @@ function render() {
   logPanel.innerHTML = renderLog();
 }
 
+function updateCompletedScanProgressSummary() {
+  if (!currentRecords.length) return;
+  const titles = new Set(["扫描完成", "样例已载入", "清单已生成"]);
+  if (!titles.has(progressTitle.textContent.trim())) return;
+  progressDetail.textContent = summarizeRecords(currentRecords);
+}
+
 function renderEmpty() {
   updateCategoryOptionMetrics();
   updateCategoryPresetState();
   updateCategorySelectionSummary();
   const empty = emptyTemplate.innerHTML;
-  openAssetCount.textContent = "0";
+  selectedAssetCount.textContent = "0";
   copySize.textContent = "0 B";
   archiveCount.textContent = "0";
   textCount.textContent = "0";
@@ -1916,7 +1929,7 @@ function renderPreflightSummary(selected, archives) {
         <span class="preflight-state">${escapeHtml(state)}</span>
       </div>
       <div class="preflight-grid">
-        <span><strong>${formatNumber(selected.length)}</strong>开放素材</span>
+        <span><strong>${formatNumber(selected.length)}</strong>将整理</span>
         <span><strong>${formatBytes(totalSize)}</strong>预计复制</span>
         <span><strong>${formatNumber(archives.length)}</strong>封包提示</span>
         <span><strong>${formatNumber(missingEnabled.length)}</strong>空分类</span>
