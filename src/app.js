@@ -66,6 +66,9 @@ const MAX_PLUGIN_PACKAGE_BYTES = 2 * 1024 * 1024;
 const UI_MODE_STORAGE_KEY = "GalAssetBox.ui.mode.v1";
 const CUSTOM_RULES_STORAGE_KEY = "GalAssetBox.category.rules.v1";
 const CATEGORY_SELECTION_STORAGE_KEY = "GalAssetBox.category.selection.v1";
+const MAX_VISIBLE_TOASTS = 3;
+const TOAST_DURATION_MS = 2600;
+const TOAST_DISMISS_LABEL_MAX_CHARS = 72;
 const PLUGIN_PACKAGE_SAFETY_FLAGS = [
   "requiresUserAuthorization",
   "localOnly",
@@ -121,6 +124,7 @@ let uiMode = loadUiMode();
 let lastOrganizeRun = null;
 let lastPluginRun = null;
 let busy = false;
+const toastControllers = new WeakMap();
 
 function sampleRecord(path, size) {
   const record = makeRecord({ path, size, handle: null });
@@ -2364,12 +2368,162 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function getToastRegion() {
+  const existingRegion = document.querySelector("#toastRegion");
+  if (existingRegion instanceof HTMLElement) return existingRegion;
+
+  const region = document.createElement("div");
+  region.id = "toastRegion";
+  region.className = "toast-region";
+  region.setAttribute("role", "status");
+  region.setAttribute("aria-live", "polite");
+  region.setAttribute("aria-atomic", "false");
+  region.setAttribute("aria-relevant", "additions text");
+  document.body.append(region);
+  return region;
+}
+
+function updateToastCount(toast, count) {
+  const countBadge = toast.querySelector(".toast-count");
+  toast.dataset.toastCount = String(count);
+  if (countBadge instanceof HTMLElement) {
+    const formattedCount = formatNumber(count);
+    const countLabel = `重复出现 ${formattedCount} 次`;
+    countBadge.hidden = false;
+    countBadge.textContent = `${formattedCount} 次`;
+    countBadge.setAttribute("aria-label", countLabel);
+    countBadge.title = countLabel;
+  }
+}
+
+function pruneToastRegion(region) {
+  while (region.children.length >= MAX_VISIBLE_TOASTS) {
+    const oldestToast = region.firstElementChild;
+    if (!(oldestToast instanceof HTMLElement)) break;
+    const controller = toastControllers.get(oldestToast);
+    if (controller) controller.remove();
+    else oldestToast.remove();
+  }
+}
+
+function scrollToastRegionToLatest(region) {
+  region.scrollTop = region.scrollHeight;
+}
+
+function getToastDismissLabel(message) {
+  if (!message) return "关闭提示";
+  const trimmedMessage = message.length > TOAST_DISMISS_LABEL_MAX_CHARS
+    ? `${message.slice(0, TOAST_DISMISS_LABEL_MAX_CHARS - 3)}...`
+    : message;
+  return `关闭提示：${trimmedMessage}`;
+}
+
 function showToast(message) {
+  const messageValue = String(message ?? "").trim();
+  if (!messageValue) return;
+  const region = getToastRegion();
+  const existingToast = [...region.querySelectorAll(".toast")]
+    .find((toast) => toast instanceof HTMLElement && toast.dataset.toastMessage === messageValue);
+  if (existingToast instanceof HTMLElement) {
+    const count = Number(existingToast.dataset.toastCount || "1") + 1;
+    updateToastCount(existingToast, count);
+    region.append(existingToast);
+    scrollToastRegionToLatest(region);
+    toastControllers.get(existingToast)?.reset();
+    return;
+  }
+
+  pruneToastRegion(region);
   const toast = document.createElement("div");
   toast.className = "toast";
-  toast.textContent = message;
-  document.body.append(toast);
-  window.setTimeout(() => toast.remove(), 2600);
+  toast.dataset.toastMessage = messageValue;
+  toast.dataset.toastCount = "1";
+  const messageText = document.createElement("span");
+  messageText.className = "toast-message";
+  messageText.textContent = messageValue;
+  const countBadge = document.createElement("span");
+  countBadge.className = "toast-count";
+  countBadge.hidden = true;
+  countBadge.setAttribute("aria-label", "");
+  const dismissButton = document.createElement("button");
+  dismissButton.className = "toast-dismiss";
+  dismissButton.type = "button";
+  const dismissLabel = getToastDismissLabel(messageValue);
+  dismissButton.setAttribute("aria-label", dismissLabel);
+  dismissButton.setAttribute("aria-keyshortcuts", "Escape");
+  dismissButton.title = `${dismissLabel}；Esc`;
+  dismissButton.textContent = "x";
+  toast.append(messageText, countBadge, dismissButton);
+  region.append(toast);
+  scrollToastRegionToLatest(region);
+
+  let timeoutId = 0;
+  let startedAt = 0;
+  let remainingTime = TOAST_DURATION_MS;
+  let isPaused = false;
+
+  const removeToast = () => {
+    const shouldRestoreFocus = toast.contains(document.activeElement);
+    const nextToast = toast.nextElementSibling instanceof HTMLElement
+      ? toast.nextElementSibling
+      : toast.previousElementSibling;
+    const nextDismissButton = nextToast instanceof HTMLElement
+      ? nextToast.querySelector(".toast-dismiss")
+      : null;
+    window.clearTimeout(timeoutId);
+    toastControllers.delete(toast);
+    toast.remove();
+    if (!region.children.length) region.remove();
+    if (shouldRestoreFocus && nextDismissButton instanceof HTMLButtonElement) {
+      nextDismissButton.focus();
+    }
+  };
+
+  const scheduleRemoval = () => {
+    startedAt = Date.now();
+    timeoutId = window.setTimeout(removeToast, remainingTime);
+  };
+
+  const pauseRemoval = () => {
+    if (isPaused) return;
+    isPaused = true;
+    window.clearTimeout(timeoutId);
+    remainingTime = Math.max(600, remainingTime - (Date.now() - startedAt));
+  };
+
+  const resumeRemoval = () => {
+    if (!isPaused) return;
+    isPaused = false;
+    scheduleRemoval();
+  };
+
+  const resetRemoval = () => {
+    window.clearTimeout(timeoutId);
+    remainingTime = TOAST_DURATION_MS;
+    if (toast.matches(":hover") || toast.contains(document.activeElement)) {
+      isPaused = true;
+      return;
+    }
+    isPaused = false;
+    scheduleRemoval();
+  };
+
+  toast.addEventListener("pointerenter", pauseRemoval);
+  toast.addEventListener("pointerleave", resumeRemoval);
+  toast.addEventListener("focusin", pauseRemoval);
+  toast.addEventListener("focusout", (event) => {
+    if (event.relatedTarget instanceof Node && toast.contains(event.relatedTarget)) return;
+    resumeRemoval();
+  });
+  toast.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    removeToast();
+  });
+  dismissButton.addEventListener("click", removeToast);
+  toastControllers.set(toast, { remove: removeToast, reset: resetRemoval });
+  scheduleRemoval();
 }
 
 function pause() {
