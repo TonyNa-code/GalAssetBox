@@ -266,6 +266,52 @@ function updateSummaryMetrics({ selectedCount, copySizeText, archiveTotal, textT
   setSummaryMetric(textMetric, textCount, textTotalText, `文本脚本 ${textTotalText} 个`);
 }
 
+function getResultViewState() {
+  const selectedCount = getSelectedCopyRecords().length;
+  const archiveTotal = currentRecords.filter((record) => record.category.id === "archive").length;
+  const pluginTotal = describeAuthorizedPlugins().length;
+  return {
+    overview: {
+      description: currentRecords.length ? `${formatNumber(selectedCount)} 个将整理素材` : "等待扫描结果",
+      count: currentRecords.length ? formatNumber(selectedCount) : "",
+    },
+    categories: {
+      description: `${formatNumber(currentRecords.length)} 个文件`,
+      count: formatNumber(currentRecords.length),
+    },
+    archives: {
+      description: `${formatNumber(archiveTotal)} 个封包提示`,
+      count: formatNumber(archiveTotal),
+    },
+    authorizedPlugins: {
+      description: `${formatNumber(pluginTotal)} 个授权插件`,
+      count: formatNumber(pluginTotal),
+    },
+    log: {
+      description: `${formatNumber(currentLog.length)} 条日志`,
+      count: formatNumber(currentLog.length),
+    },
+  };
+}
+
+function updateResultTabLabels() {
+  const viewState = getResultViewState();
+
+  document.querySelectorAll(".tab").forEach((tab) => {
+    const tabId = tab.dataset.tab || "";
+    const selectedState = tab.getAttribute("aria-selected") === "true" ? "当前选中" : "未选中";
+    const label = tab.textContent.trim();
+    const state = viewState[tabId] || { description: "结果视图", count: "" };
+    const panel = document.querySelector(`#${tabId}Panel`);
+    tab.setAttribute("aria-label", `${label}：${state.description}，${selectedState}`);
+    if (state.count) tab.setAttribute("data-tab-count", state.count);
+    else tab.removeAttribute("data-tab-count");
+    if (panel instanceof HTMLElement) {
+      panel.setAttribute("aria-description", `${label}面板，${state.description}`);
+    }
+  });
+}
+
 function setBusy(isBusy) {
   busy = isBusy;
   [
@@ -1949,6 +1995,7 @@ function render() {
   archivesPanel.innerHTML = renderArchives(archives);
   authorizedPluginsPanel.innerHTML = renderAuthorizedPlugins();
   logPanel.innerHTML = renderLog();
+  updateResultTabLabels();
 }
 
 function updateCompletedScanProgressSummary() {
@@ -1974,6 +2021,7 @@ function renderEmpty() {
   archivesPanel.innerHTML = empty;
   authorizedPluginsPanel.innerHTML = renderAuthorizedPlugins();
   logPanel.innerHTML = currentLog.length ? renderLog() : empty;
+  updateResultTabLabels();
 }
 
 function renderOverview(selected, archives) {
@@ -2861,6 +2909,7 @@ function activateTab(tab, shouldFocus = false) {
     panel.hidden = !isActive;
   });
 
+  updateResultTabLabels();
   if (shouldFocus) tab.focus();
 }
 
@@ -2870,7 +2919,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
   });
 
   tab.addEventListener("keydown", (event) => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     const tabs = [...document.querySelectorAll(".tab")];
     const currentIndex = tabs.indexOf(tab);
@@ -2878,7 +2927,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
       ? 0
       : event.key === "End"
         ? tabs.length - 1
-        : event.key === "ArrowRight"
+        : event.key === "ArrowRight" || event.key === "ArrowDown"
           ? (currentIndex + 1) % tabs.length
           : (currentIndex - 1 + tabs.length) % tabs.length;
     activateTab(tabs[nextIndex], true);
