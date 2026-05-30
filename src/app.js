@@ -32,6 +32,10 @@ const selectedAssetCount = document.querySelector("#selectedAssetCount");
 const copySize = document.querySelector("#copySize");
 const archiveCount = document.querySelector("#archiveCount");
 const textCount = document.querySelector("#textCount");
+const selectedAssetMetric = selectedAssetCount.closest("[data-summary-metric='selected']");
+const copySizeMetric = copySize.closest("[data-summary-metric='copySize']");
+const archiveMetric = archiveCount.closest("[data-summary-metric='archives']");
+const textMetric = textCount.closest("[data-summary-metric='texts']");
 const progressPanel = document.querySelector("#progressPanel");
 const progressTitle = document.querySelector("#progressTitle");
 const progressDetail = document.querySelector("#progressDetail");
@@ -69,6 +73,21 @@ const CATEGORY_SELECTION_STORAGE_KEY = "GalAssetBox.category.selection.v1";
 const MAX_VISIBLE_TOASTS = 3;
 const TOAST_DURATION_MS = 2600;
 const TOAST_DISMISS_LABEL_MAX_CHARS = 72;
+const STATUS_LABELS = {
+  Ready: "准备就绪",
+  Scanning: "扫描中",
+  Scanned: "已扫描",
+  Error: "出错",
+  Copying: "整理中",
+  Partial: "部分完成",
+  Done: "已完成",
+  Plugins: "插件处理中",
+  Importing: "导入中",
+  Imported: "已导入",
+  Manifest: "清单已载入",
+  "Manifest only": "清单模式",
+  Sample: "样例预览",
+};
 const PLUGIN_PACKAGE_SAFETY_FLAGS = [
   "requiresUserAuthorization",
   "localOnly",
@@ -199,8 +218,25 @@ function setProgress(title, detail, progress = 0, tone = "neutral") {
 }
 
 function setStatus(label, className = "neutral") {
-  statusPill.textContent = label;
+  const displayLabel = STATUS_LABELS[label] || label;
+  statusPill.textContent = displayLabel;
+  statusPill.setAttribute("aria-label", `当前状态：${displayLabel}`);
   statusPill.className = `status-pill ${className}`;
+}
+
+function setSummaryMetric(metric, valueElement, valueText, ariaLabel) {
+  valueElement.textContent = valueText;
+  if (metric) metric.setAttribute("aria-label", ariaLabel);
+}
+
+function updateSummaryMetrics({ selectedCount, copySizeText, archiveTotal, textTotal }) {
+  const selectedText = formatNumber(selectedCount);
+  const archiveText = formatNumber(archiveTotal);
+  const textTotalText = formatNumber(textTotal);
+  setSummaryMetric(selectedAssetMetric, selectedAssetCount, selectedText, `将整理 ${selectedText} 个素材`);
+  setSummaryMetric(copySizeMetric, copySize, copySizeText, `预计复制 ${copySizeText}`);
+  setSummaryMetric(archiveMetric, archiveCount, archiveText, `发现 ${archiveText} 个封包提示`);
+  setSummaryMetric(textMetric, textCount, textTotalText, `文本脚本 ${textTotalText} 个`);
 }
 
 function setBusy(isBusy) {
@@ -259,11 +295,16 @@ function updatePrimaryActionLabels(hasSource, selectedCopyCount) {
 
 function updateFolderStatus(hasSource, hasOutput) {
   const sourceLabel = sourceName.textContent.trim();
+  const outputLabel = outputName.textContent.trim();
   const sourcePreview = sourceLabel === "样例" || sourceLabel === "清单模式";
+  const sourceStatus = hasSource ? "已选择" : sourcePreview ? "预览模式" : "待选择";
+  const outputStatus = hasOutput ? "已选择" : "整理前选择";
   sourcePathBox.dataset.state = hasSource ? "ready" : sourcePreview ? "preview" : "empty";
   outputPathBox.dataset.state = hasOutput ? "ready" : "empty";
-  sourceState.textContent = hasSource ? "已选择" : sourcePreview ? "预览模式" : "待选择";
-  outputState.textContent = hasOutput ? "已选择" : "整理前选择";
+  sourceState.textContent = sourceStatus;
+  outputState.textContent = outputStatus;
+  sourcePathBox.setAttribute("aria-label", `源目录：${sourceLabel || "未选择"}，${sourceStatus}`);
+  outputPathBox.setAttribute("aria-label", `输出目录：${outputLabel || "未选择"}，${outputStatus}`);
 }
 
 function updateActionHint(hasSource, hasOutput) {
@@ -1826,10 +1867,12 @@ function render() {
   const texts = currentRecords.filter((record) => record.category.id === "text");
   const totalSize = selected.reduce((sum, record) => sum + record.size, 0);
 
-  selectedAssetCount.textContent = formatNumber(selected.length);
-  copySize.textContent = formatBytes(totalSize);
-  archiveCount.textContent = formatNumber(archives.length);
-  textCount.textContent = formatNumber(texts.length);
+  updateSummaryMetrics({
+    selectedCount: selected.length,
+    copySizeText: formatBytes(totalSize),
+    archiveTotal: archives.length,
+    textTotal: texts.length,
+  });
 
   overviewPanel.innerHTML = renderOverview(selected, archives);
   categoriesPanel.innerHTML = renderCategories();
@@ -1850,10 +1893,12 @@ function renderEmpty() {
   updateCategoryPresetState();
   updateCategorySelectionSummary();
   const empty = emptyTemplate.innerHTML;
-  selectedAssetCount.textContent = "0";
-  copySize.textContent = "0 B";
-  archiveCount.textContent = "0";
-  textCount.textContent = "0";
+  updateSummaryMetrics({
+    selectedCount: 0,
+    copySizeText: "0 B",
+    archiveTotal: 0,
+    textTotal: 0,
+  });
   overviewPanel.innerHTML = empty;
   categoriesPanel.innerHTML = empty;
   archivesPanel.innerHTML = empty;
@@ -1907,6 +1952,10 @@ function renderPreflightSummary(selected, archives) {
   const totalSize = selected.reduce((sum, record) => sum + record.size, 0);
   const hasOutput = Boolean(outputHandle || desktopOutput);
   const transformMatches = getTransformPluginMatches(currentRecords).length;
+  const selectedText = formatNumber(selected.length);
+  const totalSizeText = formatBytes(totalSize);
+  const archiveText = formatNumber(archives.length);
+  const missingEnabledText = formatNumber(missingEnabled.length);
   const messages = [];
   let tone = "ready";
   let state = "可以整理";
@@ -1947,12 +1996,24 @@ function renderPreflightSummary(selected, archives) {
         </div>
         <span class="preflight-state">${escapeHtml(state)}</span>
       </div>
-      <div class="preflight-grid">
-        <span><strong>${formatNumber(selected.length)}</strong>将整理</span>
-        <span><strong>${formatBytes(totalSize)}</strong>预计复制</span>
-        <span><strong>${formatNumber(archives.length)}</strong>封包提示</span>
-        <span><strong>${formatNumber(missingEnabled.length)}</strong>空分类</span>
-      </div>
+      <dl class="preflight-grid" aria-label="整理前预检指标">
+        <div role="group" aria-label="将整理 ${selectedText} 个开放素材">
+          <dt>将整理</dt>
+          <dd>${selectedText}</dd>
+        </div>
+        <div role="group" aria-label="预计复制 ${totalSizeText}">
+          <dt>预计复制</dt>
+          <dd>${totalSizeText}</dd>
+        </div>
+        <div role="group" aria-label="发现 ${archiveText} 个封包提示">
+          <dt>封包提示</dt>
+          <dd>${archiveText}</dd>
+        </div>
+        <div role="group" aria-label="有 ${missingEnabledText} 个空分类">
+          <dt>空分类</dt>
+          <dd>${missingEnabledText}</dd>
+        </div>
+      </dl>
       <ul class="preflight-list">
         ${messages.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}
       </ul>
@@ -1994,13 +2055,14 @@ function renderCategories() {
   return `
     <div class="section-title">
       <h3>分类统计</h3>
-      <span>${formatNumber(currentRecords.length)} files</span>
+      <span>${formatNumber(currentRecords.length)} 个文件</span>
     </div>
-    <div class="category-bars">
+    <div class="category-bars" role="list" aria-label="各素材类型统计">
       ${CATEGORY_DEFS.map((definition) => {
         const count = grouped.get(definition.id) || 0;
+        const label = `${definition.label}，${formatNumber(count)} 个文件`;
         return `
-          <div class="category-bar">
+          <div class="category-bar" role="listitem" aria-label="${escapeHtml(label)}">
             <strong>${escapeHtml(definition.label)}</strong>
             <div class="bar-track" aria-hidden="true"><span style="width: ${(count / max) * 100}%"></span></div>
             <em>${formatNumber(count)}</em>
@@ -2060,7 +2122,7 @@ function renderArchives(archives) {
   return `
     <div class="section-title">
       <h3>封包提示</h3>
-      <span>${formatNumber(archives.length)} index-only</span>
+      <span>${formatNumber(archives.length)} 只写清单</span>
     </div>
     <article class="notice-card">
       <h4>识别但不拆包</h4>

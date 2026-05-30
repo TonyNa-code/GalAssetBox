@@ -695,10 +695,15 @@ body[data-mode="beginner"] .advanced-only {
   line-height: 1;
 }
 
-.summary-strip small {
+.summary-strip dt {
   color: var(--muted-strong);
   font-size: 13px;
   font-weight: 800;
+}
+
+.summary-strip dd {
+  order: -1;
+  margin: 0;
 }
 
 .progress-panel {
@@ -1002,9 +1007,10 @@ body[data-mode="beginner"] .advanced-only {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+  margin: 0;
 }
 
-.preflight-grid span {
+.preflight-grid div {
   display: grid;
   gap: 3px;
   border: 1px solid var(--line);
@@ -1016,10 +1022,22 @@ body[data-mode="beginner"] .advanced-only {
   font-weight: 800;
 }
 
-.preflight-grid strong {
+.preflight-grid dt {
+  min-width: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.preflight-grid dd {
+  order: -1;
+  min-width: 0;
+  margin: 0;
   color: var(--ink);
   font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
   line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 
 .preflight-list {
@@ -1125,7 +1143,7 @@ body[data-mode="beginner"] .advanced-only {
 
 .category-bar {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr) 56px;
+  grid-template-columns: minmax(76px, 96px) minmax(0, 1fr) minmax(38px, auto);
   align-items: center;
   gap: 10px;
   border: 1px solid rgba(217, 223, 216, 0.9);
@@ -1136,13 +1154,18 @@ body[data-mode="beginner"] .advanced-only {
 }
 
 .category-bar strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 13px;
   color: var(--ink-strong);
+  line-height: 1.2;
 }
 
 .category-bar em {
   color: var(--muted);
   font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
   text-align: right;
 }
 
@@ -1158,6 +1181,14 @@ body[data-mode="beginner"] .advanced-only {
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--green), var(--blue));
+}
+
+.category-bar:nth-child(3n + 2) .bar-track span {
+  background: linear-gradient(90deg, var(--blue), var(--green));
+}
+
+.category-bar:nth-child(3n) .bar-track span {
+  background: linear-gradient(90deg, var(--amber), var(--green));
 }
 
 .sample-list {
@@ -1720,7 +1751,7 @@ body[data-mode="beginner"] .advanced-only {
   }
 
   .category-bar {
-    grid-template-columns: 76px minmax(0, 1fr) 44px;
+    grid-template-columns: minmax(68px, 82px) minmax(0, 1fr) minmax(34px, auto);
   }
 
   .policy-list,

@@ -16,7 +16,7 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="workspace" aria-label="GalAssetBox workspace">
+      <section class="workspace" aria-label="GalAssetBox 工作区">
         <aside class="control-pane">
           <div class="brand-row">
             <div class="brand-mark" aria-hidden="true">GAB</div>
@@ -32,15 +32,31 @@
               选择游戏文件夹
             </button>
             <button id="pickOutputButton" type="button">选择输出文件夹</button>
-            <div id="sourcePathBox" class="path-box" data-state="empty">
+            <div
+              id="sourcePathBox"
+              class="path-box"
+              data-state="empty"
+              role="group"
+              aria-live="polite"
+              aria-atomic="true"
+              aria-label="源目录：未选择，待选择"
+            >
               <span>源目录</span>
               <strong id="sourceName">未选择</strong>
               <em id="sourceState">待选择</em>
             </div>
-            <div id="outputPathBox" class="path-box" data-state="empty">
+            <div
+              id="outputPathBox"
+              class="path-box"
+              data-state="empty"
+              role="group"
+              aria-live="polite"
+              aria-atomic="true"
+              aria-label="输出目录：未选择，整理前选择"
+            >
               <span>输出到</span>
               <strong id="outputName">未选择</strong>
-              <em id="outputState">待选择</em>
+              <em id="outputState">整理前选择</em>
             </div>
           </section>
 
@@ -99,30 +115,32 @@
         <section class="result-pane">
           <header class="result-header">
             <div>
-              <p class="eyebrow">Local organizer</p>
+              <p class="eyebrow">本地整理器</p>
               <h2 id="projectTitle">等待选择文件夹</h2>
             </div>
-            <div id="statusPill" class="status-pill neutral">Ready</div>
+            <div id="statusPill" class="status-pill neutral" role="status" aria-live="polite" aria-label="当前状态：准备就绪">
+              准备就绪
+            </div>
           </header>
 
-          <section class="summary-strip" aria-label="summary">
-            <div>
-              <span id="selectedAssetCount">0</span>
-              <small>将整理</small>
+          <dl class="summary-strip" aria-label="整理摘要" aria-live="polite" aria-atomic="false">
+            <div data-summary-metric="selected" role="group" aria-label="将整理 0 个素材">
+              <dt>将整理</dt>
+              <dd><span id="selectedAssetCount">0</span></dd>
             </div>
-            <div>
-              <span id="copySize">0 B</span>
-              <small>预计复制</small>
+            <div data-summary-metric="copySize" role="group" aria-label="预计复制 0 B">
+              <dt>预计复制</dt>
+              <dd><span id="copySize">0 B</span></dd>
             </div>
-            <div>
-              <span id="archiveCount">0</span>
-              <small>封包提示</small>
+            <div data-summary-metric="archives" role="group" aria-label="发现 0 个封包提示">
+              <dt>封包提示</dt>
+              <dd><span id="archiveCount">0</span></dd>
             </div>
-            <div>
-              <span id="textCount">0</span>
-              <small>文本脚本</small>
+            <div data-summary-metric="texts" role="group" aria-label="文本脚本 0 个">
+              <dt>文本脚本</dt>
+              <dd><span id="textCount">0</span></dd>
             </div>
-          </section>
+          </dl>
 
           <section id="progressPanel" class="progress-panel" aria-live="polite">
             <div>
@@ -143,7 +161,7 @@
             </div>
           </section>
 
-          <nav class="tabs" aria-label="result views" role="tablist" aria-orientation="horizontal">
+          <nav class="tabs" aria-label="结果视图" role="tablist" aria-orientation="horizontal">
             <button class="tab active" id="tab-overview" data-tab="overview" type="button" role="tab" aria-controls="overviewPanel" aria-selected="true">总览</button>
             <button class="tab" id="tab-categories" data-tab="categories" type="button" role="tab" aria-controls="categoriesPanel" aria-selected="false" tabindex="-1">分类</button>
             <button class="tab" id="tab-archives" data-tab="archives" type="button" role="tab" aria-controls="archivesPanel" aria-selected="false" tabindex="-1">封包</button>
