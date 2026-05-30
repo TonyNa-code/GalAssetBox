@@ -46,6 +46,9 @@ const categoriesPanel = document.querySelector("#categoriesPanel");
 const archivesPanel = document.querySelector("#archivesPanel");
 const authorizedPluginsPanel = document.querySelector("#authorizedPluginsPanel");
 const logPanel = document.querySelector("#logPanel");
+const resultTabList = document.querySelector(".tabs");
+const resultTabs = [...document.querySelectorAll(".tab")];
+const resultPanels = [...document.querySelectorAll(".tab-panel")];
 const emptyTemplate = document.querySelector("#emptyTemplate");
 const desktopBridge = window.GalAssetBoxDesktop || null;
 
@@ -297,7 +300,7 @@ function getResultViewState() {
 function updateResultTabLabels() {
   const viewState = getResultViewState();
 
-  document.querySelectorAll(".tab").forEach((tab) => {
+  resultTabs.forEach((tab) => {
     const tabId = tab.dataset.tab || "";
     const selectedState = tab.getAttribute("aria-selected") === "true" ? "当前选中" : "未选中";
     const label = tab.textContent.trim();
@@ -310,6 +313,47 @@ function updateResultTabLabels() {
       panel.setAttribute("aria-description", `${label}面板，${state.description}`);
     }
   });
+  updateResultTabsScrollState();
+}
+
+function updateResultTabsScrollState() {
+  if (!(resultTabList instanceof HTMLElement)) return;
+  const maxScrollLeft = Math.max(0, resultTabList.scrollWidth - resultTabList.clientWidth);
+  const hasOverflow = maxScrollLeft > 1;
+  const canScrollLeft = hasOverflow && resultTabList.scrollLeft > 1;
+  const canScrollRight = hasOverflow && resultTabList.scrollLeft < maxScrollLeft - 1;
+
+  resultTabList.dataset.overflow = hasOverflow ? "true" : "false";
+  resultTabList.dataset.canScrollLeft = canScrollLeft ? "true" : "false";
+  resultTabList.dataset.canScrollRight = canScrollRight ? "true" : "false";
+}
+
+function keepActiveTabInView(tab) {
+  const tabList = resultTabList || tab.closest(".tabs");
+  if (!(tabList instanceof HTMLElement)) return;
+  if (tabList.scrollWidth <= tabList.clientWidth) {
+    updateResultTabsScrollState();
+    return;
+  }
+
+  const edgePadding = 8;
+  const visibleLeft = tabList.scrollLeft;
+  const visibleRight = visibleLeft + tabList.clientWidth;
+  const targetLeft = tab.offsetLeft - edgePadding;
+  const targetRight = tab.offsetLeft + tab.offsetWidth + edgePadding;
+  const maxScrollLeft = tabList.scrollWidth - tabList.clientWidth;
+  let nextScrollLeft = visibleLeft;
+
+  if (targetLeft < visibleLeft) {
+    nextScrollLeft = Math.max(0, targetLeft);
+  } else if (targetRight > visibleRight) {
+    nextScrollLeft = Math.min(maxScrollLeft, targetRight - tabList.clientWidth);
+  }
+
+  if (Math.abs(nextScrollLeft - visibleLeft) < 1) return;
+  const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  tabList.scrollTo({ left: nextScrollLeft, behavior: reduceMotion ? "auto" : "smooth" });
+  window.requestAnimationFrame(updateResultTabsScrollState);
 }
 
 function setBusy(isBusy) {
@@ -2896,24 +2940,25 @@ function activateTab(tab, shouldFocus = false) {
   const targetPanel = document.querySelector(`#${tab.dataset.tab}Panel`);
   if (!(targetPanel instanceof HTMLElement)) return;
 
-  document.querySelectorAll(".tab").forEach((button) => {
+  resultTabs.forEach((button) => {
     const isActive = button === tab;
     button.classList.toggle("active", isActive);
     button.setAttribute("aria-selected", isActive ? "true" : "false");
     button.tabIndex = isActive ? 0 : -1;
   });
 
-  document.querySelectorAll(".tab-panel").forEach((panel) => {
+  resultPanels.forEach((panel) => {
     const isActive = panel === targetPanel;
     panel.classList.toggle("active", isActive);
     panel.hidden = !isActive;
   });
 
   updateResultTabLabels();
+  keepActiveTabInView(tab);
   if (shouldFocus) tab.focus();
 }
 
-document.querySelectorAll(".tab").forEach((tab) => {
+resultTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     activateTab(tab);
   });
@@ -2921,18 +2966,20 @@ document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const tabs = [...document.querySelectorAll(".tab")];
-    const currentIndex = tabs.indexOf(tab);
+    const currentIndex = resultTabs.indexOf(tab);
     const nextIndex = event.key === "Home"
       ? 0
       : event.key === "End"
-        ? tabs.length - 1
+        ? resultTabs.length - 1
         : event.key === "ArrowRight" || event.key === "ArrowDown"
-          ? (currentIndex + 1) % tabs.length
-          : (currentIndex - 1 + tabs.length) % tabs.length;
-    activateTab(tabs[nextIndex], true);
+          ? (currentIndex + 1) % resultTabs.length
+          : (currentIndex - 1 + resultTabs.length) % resultTabs.length;
+    activateTab(resultTabs[nextIndex], true);
   });
 });
+
+resultTabList?.addEventListener("scroll", updateResultTabsScrollState, { passive: true });
+window.addEventListener("resize", updateResultTabsScrollState);
 
 authorizedPluginsPanel.addEventListener("click", (event) => {
   if (!(event.target instanceof HTMLElement)) return;

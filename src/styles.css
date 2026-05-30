@@ -791,8 +791,25 @@ body[data-mode="beginner"] .advanced-only {
   border-radius: 8px;
   padding: 5px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-padding: 5px;
   background: rgba(238, 243, 239, 0.74);
   scrollbar-width: thin;
+  transition: box-shadow 0.18s ease;
+}
+
+.tabs[data-can-scroll-left="true"] {
+  box-shadow: inset 12px 0 12px -14px rgba(21, 26, 24, 0.56);
+}
+
+.tabs[data-can-scroll-right="true"] {
+  box-shadow: inset -12px 0 12px -14px rgba(21, 26, 24, 0.56);
+}
+
+.tabs[data-can-scroll-left="true"][data-can-scroll-right="true"] {
+  box-shadow:
+    inset 12px 0 12px -14px rgba(21, 26, 24, 0.56),
+    inset -12px 0 12px -14px rgba(21, 26, 24, 0.56);
 }
 
 .tab {
@@ -800,6 +817,7 @@ body[data-mode="beginner"] .advanced-only {
   min-width: 84px;
   min-height: 36px;
   border-color: transparent;
+  scroll-snap-align: start;
   background: transparent;
   box-shadow: none;
 }
@@ -1765,6 +1783,10 @@ body[data-mode="beginner"] .advanced-only {
     flex: 0 0 auto;
     min-width: 72px;
     padding: 0 8px;
+  }
+
+  .tabs {
+    scroll-snap-type: x proximity;
   }
 
   .category-options {
