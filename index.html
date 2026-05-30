@@ -62,7 +62,13 @@
 
           <section class="control-group">
             <h2>要整理的类型</h2>
-            <div id="categoryPresets" class="category-presets" role="group" aria-label="快速选择素材类型">
+            <div
+              id="categoryPresets"
+              class="category-presets"
+              role="group"
+              aria-label="快速选择素材类型"
+              aria-describedby="categoryPresetHint"
+            >
               <button type="button" data-category-preset="all">全部</button>
               <button type="button" data-category-preset="filled">有素材</button>
               <button type="button" data-category-preset="images">图片</button>
@@ -73,7 +79,13 @@
             <p id="categoryPresetHint" class="category-preset-hint" data-state="preset" aria-live="polite">
               当前预设：全部
             </p>
-            <div id="categoryOptions" class="category-options"></div>
+            <div
+              id="categoryOptions"
+              class="category-options"
+              role="group"
+              aria-label="素材类型勾选"
+              aria-describedby="categorySelectionSummary"
+            ></div>
             <p id="categorySelectionSummary" class="category-selection-summary" data-state="empty" aria-live="polite">
               扫描后显示当前勾选类型的预计复制量。
             </p>
@@ -81,7 +93,7 @@
 
           <section class="control-group">
             <h2>模式</h2>
-            <div id="modeSwitch" class="mode-switch" role="group" aria-label="界面模式">
+            <div id="modeSwitch" class="mode-switch" role="group" aria-label="界面模式" aria-describedby="modeHelp">
               <button id="beginnerModeButton" type="button">新手模式</button>
               <button id="advancedModeButton" type="button">高级功能</button>
             </div>

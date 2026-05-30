@@ -115,6 +115,20 @@ const CATEGORY_PRESETS = {
   text: ["text"],
 };
 
+const CATEGORY_PRESET_DESCRIPTIONS = {
+  all: "选择全部素材类型",
+  filled: "选择当前扫描中有素材的类型",
+  images: "选择 CG、立绘、背景和其他图片",
+  audio: "选择音乐、语音和音效",
+  video: "只选择视频",
+  text: "只选择文本脚本",
+};
+
+const UI_MODE_DESCRIPTIONS = {
+  beginner: "只显示最常用的整理流程",
+  advanced: "显示插件、诊断、样例和清单等高级功能",
+};
+
 const CATEGORY_BY_ID = new Map(CATEGORY_DEFS.map((category) => [category.id, category]));
 let customCategoryRules = loadCustomCategoryRules();
 const SAMPLE_RECORDS = [
@@ -360,12 +374,18 @@ function setUiMode(nextMode) {
   applyUiMode();
 }
 
+function updateModeButtonState(button, mode) {
+  const active = uiMode === mode;
+  const label = button.textContent.trim();
+  button.classList.toggle("active", active);
+  button.setAttribute("aria-pressed", active ? "true" : "false");
+  button.setAttribute("aria-label", `${label}：${UI_MODE_DESCRIPTIONS[mode]}，${active ? "当前选中" : "未选中"}`);
+}
+
 function applyUiMode() {
   document.body.dataset.mode = uiMode;
-  beginnerModeButton.classList.toggle("active", uiMode === "beginner");
-  advancedModeButton.classList.toggle("active", uiMode === "advanced");
-  beginnerModeButton.setAttribute("aria-pressed", uiMode === "beginner" ? "true" : "false");
-  advancedModeButton.setAttribute("aria-pressed", uiMode === "advanced" ? "true" : "false");
+  updateModeButtonState(beginnerModeButton, "beginner");
+  updateModeButtonState(advancedModeButton, "advanced");
   modeHelp.textContent = uiMode === "advanced"
     ? "显示插件、诊断、样例和清单等高级功能。"
     : "只显示最常用的整理流程。";
@@ -577,13 +597,18 @@ function updateCategoryPresetState() {
   let activeLabel = "";
   categoryPresets.querySelectorAll("[data-category-preset]").forEach((button) => {
     const presetId = button.dataset.categoryPreset || "";
+    const label = button.textContent.trim();
     const presetIds = new Set(getCategoryPresetIds(presetId));
     const unavailable = presetId === "filled" && !currentRecords.length;
     const active = !unavailable && sameSet(selectedIds, presetIds);
+    const description = CATEGORY_PRESET_DESCRIPTIONS[presetId] || label;
+    const availability = busy ? "处理中暂不可用" : unavailable ? "扫描后可用" : active ? "当前选中" : "未选中";
+    const presetSize = unavailable ? "" : `，包含 ${formatNumber(presetIds.size)} 个类型`;
     button.disabled = busy || unavailable;
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
-    if (active) activeLabel = button.textContent.trim();
+    button.setAttribute("aria-label", `${label}：${description}${presetSize}，${availability}`);
+    if (active) activeLabel = label;
   });
   if (!selectedIds.size) {
     categoryPresetHint.dataset.state = "blocked";
@@ -642,12 +667,16 @@ function updateCategoryOptionMetrics() {
   for (const definition of CATEGORY_DEFS) {
     const option = categoryOptions.querySelector(`[data-category-option="${definition.id}"]`);
     if (!(option instanceof HTMLElement)) continue;
+    const input = option.querySelector("input[type='checkbox']");
     const count = option.querySelector("[data-category-count]");
     const size = option.querySelector("[data-category-size]");
     const metric = metrics.get(definition.id) || { count: 0, size: 0 };
+    const countText = formatNumber(metric.count);
+    const sizeText = metric.count ? formatBytes(metric.size) : "0 B";
     option.dataset.empty = metric.count ? "false" : "true";
-    if (count) count.textContent = formatNumber(metric.count);
-    if (size) size.textContent = metric.count ? formatBytes(metric.size) : "0 B";
+    if (input) input.setAttribute("aria-label", `${definition.label}，${countText} 个文件，${sizeText}`);
+    if (count) count.textContent = countText;
+    if (size) size.textContent = sizeText;
   }
 }
 
