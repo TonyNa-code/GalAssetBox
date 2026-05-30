@@ -88,6 +88,14 @@ const STATUS_LABELS = {
   "Manifest only": "清单模式",
   Sample: "样例预览",
 };
+const ADVANCED_ACTION_DESCRIPTIONS = new Map([
+  [runPluginsButton, "运行已启用的授权插件处理匹配素材"],
+  [importPluginButton, "导入可信本地 JavaScript 插件"],
+  [importPluginPackageButton, "导入带 plugin.json 的本地插件包"],
+  [helpSummaryButton, "导出当前扫描结果的求助摘要"],
+  [manifestOnlyButton, "只选择文件生成素材清单"],
+  [sampleButton, "载入本地演示数据预览界面"],
+]);
 const PLUGIN_PACKAGE_SAFETY_FLAGS = [
   "requiresUserAuthorization",
   "localOnly",
@@ -223,10 +231,15 @@ function nowStamp() {
 
 function setProgress(title, detail, progress = 0, tone = "neutral") {
   const boundedProgress = Math.max(0, Math.min(100, progress));
+  const roundedProgress = Math.round(boundedProgress);
+  const cleanDetail = String(detail || "").trim().replace(/[。！？.!?]+$/, "");
   progressTitle.textContent = title;
   progressDetail.textContent = detail;
-  progressTrack.setAttribute("aria-valuenow", String(Math.round(boundedProgress)));
-  progressTrack.setAttribute("aria-valuetext", `${Math.round(boundedProgress)}%`);
+  progressTrack.setAttribute("aria-valuenow", String(roundedProgress));
+  progressTrack.setAttribute(
+    "aria-valuetext",
+    cleanDetail ? `${title}，${cleanDetail}，${roundedProgress}%` : `${title}，${roundedProgress}%`,
+  );
   progressBar.style.width = `${boundedProgress}%`;
   progressPanel.className = `progress-panel ${tone}`;
 }
@@ -294,6 +307,7 @@ function updateActionState() {
   updateFolderStatus(hasSource, hasOutput);
   updateActionHint(hasSource, hasOutput);
   updatePrimaryActionLabels(hasSource, selectedCopyCount);
+  updateAdvancedActionLabels();
 }
 
 function updatePrimaryActionLabels(hasSource, selectedCopyCount) {
@@ -304,6 +318,24 @@ function updatePrimaryActionLabels(hasSource, selectedCopyCount) {
     organizeButton.textContent = "无可整理素材";
   } else {
     organizeButton.textContent = `整理 ${formatNumber(selectedCopyCount)} 个素材`;
+  }
+  const actionMessage = actionHint.textContent.trim();
+  setActionButtonLabel(scanButton, actionMessage);
+  setActionButtonLabel(organizeButton, actionMessage);
+}
+
+function setActionButtonLabel(button, actionMessage) {
+  const label = button.textContent.trim();
+  const cleanMessage = String(actionMessage || "").trim().replace(/[。！？.!?]+$/, "");
+  const availability = button.disabled ? "当前不可用" : "可用";
+  button.setAttribute("aria-label", cleanMessage ? `${label}：${cleanMessage}，${availability}` : `${label}：${availability}`);
+}
+
+function updateAdvancedActionLabels() {
+  for (const [button, description] of ADVANCED_ACTION_DESCRIPTIONS) {
+    const label = button.textContent.trim();
+    const availability = button.disabled ? "当前不可用" : "可用";
+    button.setAttribute("aria-label", `${label}：${description}，${availability}`);
   }
 }
 
@@ -319,6 +351,14 @@ function updateFolderStatus(hasSource, hasOutput) {
   outputState.textContent = outputStatus;
   sourcePathBox.setAttribute("aria-label", `源目录：${sourceLabel || "未选择"}，${sourceStatus}`);
   outputPathBox.setAttribute("aria-label", `输出目录：${outputLabel || "未选择"}，${outputStatus}`);
+  setFolderButtonLabel(pickSourceButton, "源目录", sourceLabel, sourceStatus);
+  setFolderButtonLabel(pickOutputButton, "输出目录", outputLabel, outputStatus);
+}
+
+function setFolderButtonLabel(button, targetLabel, folderLabel, folderStatus) {
+  const buttonLabel = button.textContent.trim();
+  const availability = button.disabled ? "当前不可用" : "可用";
+  button.setAttribute("aria-label", `${buttonLabel}：${targetLabel}：${folderLabel || "未选择"}，${folderStatus}，${availability}`);
 }
 
 function updateActionHint(hasSource, hasOutput) {
@@ -354,6 +394,7 @@ function updateActionHint(hasSource, hasOutput) {
 
   actionHint.dataset.state = state;
   actionHint.textContent = message;
+  actionHint.setAttribute("aria-label", `操作提示：${message}`);
 }
 
 function loadUiMode() {

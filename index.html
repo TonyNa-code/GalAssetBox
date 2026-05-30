@@ -104,7 +104,12 @@
             <h2>操作</h2>
             <button id="scanButton" type="button" aria-describedby="actionHint">扫描素材</button>
             <button id="organizeButton" class="primary-action" type="button" aria-describedby="actionHint">开始整理</button>
-            <div class="advanced-actions advanced-only">
+            <div
+              class="advanced-actions advanced-only"
+              role="group"
+              aria-label="高级操作"
+              aria-describedby="actionHint"
+            >
               <button id="runPluginsButton" type="button">运行授权插件</button>
               <button id="importPluginButton" type="button">导入本地插件</button>
               <button id="importPluginPackageButton" type="button">导入插件包</button>
@@ -112,7 +117,17 @@
               <button id="manifestOnlyButton" type="button">只选文件生成清单</button>
               <button id="sampleButton" type="button">载入样例</button>
             </div>
-            <p id="actionHint" class="action-hint" data-state="blocked" aria-live="polite">先选择游戏文件夹。</p>
+            <p
+              id="actionHint"
+              class="action-hint"
+              data-state="blocked"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              aria-label="操作提示：先选择游戏文件夹。"
+            >
+              先选择游戏文件夹。
+            </p>
             <input id="importPluginInput" type="file" accept=".js,.gabplugin.js,text/javascript,application/javascript" hidden />
             <input id="importPluginPackageInput" type="file" webkitdirectory multiple hidden />
             <input id="manifestInput" type="file" webkitdirectory multiple hidden />
@@ -154,7 +169,7 @@
             </div>
           </dl>
 
-          <section id="progressPanel" class="progress-panel" aria-live="polite">
+          <section id="progressPanel" class="progress-panel" aria-label="任务进度" aria-live="polite" aria-atomic="false">
             <div>
               <strong id="progressTitle">准备就绪</strong>
               <span id="progressDetail">选择游戏文件夹后开始扫描。</span>
@@ -168,6 +183,7 @@
               aria-valuemin="0"
               aria-valuemax="100"
               aria-valuenow="0"
+              aria-valuetext="准备就绪，选择游戏文件夹后开始扫描，0%"
             >
               <span id="progressBar"></span>
             </div>
