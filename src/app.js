@@ -266,9 +266,12 @@ function setSummaryMetric(metric, valueElement, valueText, ariaLabel, state = "e
   else delete metric.dataset.summaryNote;
 }
 
-function updateSummaryStripLabel(parts) {
+function updateSummaryStripLabel(parts, state = "empty") {
   if (!(summaryStrip instanceof HTMLElement)) return;
-  summaryStrip.setAttribute("aria-label", `整理摘要：${parts.filter(Boolean).join("；")}`);
+  const label = `整理摘要：${parts.filter(Boolean).join("；")}`;
+  summaryStrip.setAttribute("aria-label", label);
+  summaryStrip.title = label;
+  summaryStrip.dataset.state = state;
 }
 
 function updateSummaryMetrics({ selectedCount, copySizeText, archiveTotal, textTotal, copyableTotal = selectedCount }) {
@@ -308,6 +311,13 @@ function updateSummaryMetrics({ selectedCount, copySizeText, archiveTotal, textT
         : "待扫描";
   const archiveNote = archiveTotal > 0 ? "只提示" : hasRecords ? "无封包" : "待扫描";
   const textNote = textTotal > 0 ? "有脚本" : hasRecords ? "未发现" : "待扫描";
+  const summaryState = selectedState === "blocked"
+    ? "blocked"
+    : selectedCount > 0
+      ? "active"
+      : archiveTotal > 0
+        ? "warn"
+        : "empty";
   setSummaryMetric(
     selectedAssetMetric,
     selectedAssetCount,
@@ -345,7 +355,7 @@ function updateSummaryMetrics({ selectedCount, copySizeText, archiveTotal, textT
     `${copyLabel}，${copyNote}`,
     `封包提示 ${archiveText} 个，${archiveNote}`,
     `文本脚本 ${textTotalText} 个，${textNote}`,
-  ]);
+  ], summaryState);
 }
 
 function getResultViewState() {
