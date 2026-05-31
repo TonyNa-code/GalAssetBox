@@ -254,19 +254,86 @@ function setStatus(label, className = "neutral") {
   statusPill.className = `status-pill ${className}`;
 }
 
-function setSummaryMetric(metric, valueElement, valueText, ariaLabel) {
+function setSummaryMetric(metric, valueElement, valueText, ariaLabel, state = "empty", note = "") {
   valueElement.textContent = valueText;
-  if (metric) metric.setAttribute("aria-label", ariaLabel);
+  if (!metric) return;
+  const fullLabel = note ? `${ariaLabel}，状态：${note}` : ariaLabel;
+  metric.setAttribute("aria-label", fullLabel);
+  metric.title = fullLabel;
+  metric.dataset.state = state;
+  if (note) metric.dataset.summaryNote = note;
+  else delete metric.dataset.summaryNote;
 }
 
-function updateSummaryMetrics({ selectedCount, copySizeText, archiveTotal, textTotal }) {
+function updateSummaryMetrics({ selectedCount, copySizeText, archiveTotal, textTotal, copyableTotal = selectedCount }) {
+  const hasRecords = currentRecords.length > 0;
+  const hasCopyableRecords = copyableTotal > 0;
   const selectedText = formatNumber(selectedCount);
   const archiveText = formatNumber(archiveTotal);
   const textTotalText = formatNumber(textTotal);
-  setSummaryMetric(selectedAssetMetric, selectedAssetCount, selectedText, `将整理 ${selectedText} 个素材`);
-  setSummaryMetric(copySizeMetric, copySize, copySizeText, `预计复制 ${copySizeText}`);
-  setSummaryMetric(archiveMetric, archiveCount, archiveText, `发现 ${archiveText} 个封包提示`);
-  setSummaryMetric(textMetric, textCount, textTotalText, `文本脚本 ${textTotalText} 个`);
+  const selectedState = selectedCount > 0 ? "active" : hasCopyableRecords ? "blocked" : "empty";
+  const selectedLabel = selectedCount > 0
+    ? `将整理 ${selectedText} 个素材`
+    : hasRecords && !hasCopyableRecords
+      ? "当前扫描结果没有可整理的开放素材"
+      : hasRecords
+      ? "当前没有将整理的素材"
+      : `将整理 ${selectedText} 个素材`;
+  const copyLabel = selectedCount > 0
+    ? `预计复制 ${copySizeText}`
+    : hasRecords && !hasCopyableRecords
+      ? "当前预计复制 0 B，扫描结果没有可直接复制的开放素材"
+      : hasRecords
+      ? "当前预计复制 0 B，请选择至少一种有素材的类型"
+      : `预计复制 ${copySizeText}`;
+  const selectedNote = selectedCount > 0
+    ? "可整理"
+    : hasRecords && !hasCopyableRecords
+      ? "无开放"
+      : hasRecords
+        ? "需选择"
+        : "待扫描";
+  const copyNote = selectedCount > 0
+    ? "估算"
+    : hasRecords && !hasCopyableRecords
+      ? "无复制"
+      : hasRecords
+        ? "需选择"
+        : "待扫描";
+  const archiveNote = archiveTotal > 0 ? "只提示" : hasRecords ? "无封包" : "待扫描";
+  const textNote = textTotal > 0 ? "有脚本" : hasRecords ? "未发现" : "待扫描";
+  setSummaryMetric(
+    selectedAssetMetric,
+    selectedAssetCount,
+    selectedText,
+    selectedLabel,
+    selectedState,
+    selectedNote,
+  );
+  setSummaryMetric(
+    copySizeMetric,
+    copySize,
+    copySizeText,
+    copyLabel,
+    selectedState,
+    copyNote,
+  );
+  setSummaryMetric(
+    archiveMetric,
+    archiveCount,
+    archiveText,
+    `发现 ${archiveText} 个封包提示`,
+    archiveTotal > 0 ? "warn" : "empty",
+    archiveNote,
+  );
+  setSummaryMetric(
+    textMetric,
+    textCount,
+    textTotalText,
+    `文本脚本 ${textTotalText} 个`,
+    textTotal > 0 ? "active" : "empty",
+    textNote,
+  );
 }
 
 function getResultViewState() {
@@ -456,6 +523,7 @@ function updateActionHint(hasSource, hasOutput) {
   const isPreview = sourceLabel === "样例" || sourceLabel === "清单模式";
   const hasRecords = currentRecords.length > 0;
   const selectedCopyCount = hasRecords ? getSelectedCopyRecords().length : 0;
+  const copyableCount = hasRecords ? getCopyableRecords().length : 0;
   let state = "blocked";
   let message = "先选择游戏文件夹。";
 
@@ -471,9 +539,12 @@ function updateActionHint(hasSource, hasOutput) {
   } else if (hasSource && !hasRecords) {
     state = "ready";
     message = "源目录已选择，下一步扫描素材。";
-  } else if (hasSource && hasRecords && !selectedCopyCount) {
+  } else if (hasSource && hasRecords && !selectedCopyCount && copyableCount) {
     state = "blocked";
     message = "当前勾选类型里没有可整理素材，请重新勾选类型或查看封包提示。";
+  } else if (hasSource && hasRecords && !selectedCopyCount) {
+    state = "warn";
+    message = "扫描完成，但没有可直接整理的开放素材；可查看封包提示或导出求助摘要。";
   } else if (hasSource && hasRecords && !hasOutput) {
     state = "warn";
     message = "扫描完成；选择输出文件夹后即可开始整理。";
@@ -812,7 +883,7 @@ function updateCategoryOptionMetrics() {
 }
 
 function updateCategorySelectionSummary() {
-  const copyRecords = currentRecords.filter((record) => record.category.copy);
+  const copyRecords = getCopyableRecords();
   const selected = getSelectedCopyRecords();
   const selectedSize = selected.reduce((sum, record) => sum + record.size, 0);
   const excluded = copyRecords.length - selected.length;
@@ -824,9 +895,12 @@ function updateCategorySelectionSummary() {
     message = `当前会复制 ${formatNumber(selected.length)} 个开放素材，约 ${formatBytes(selectedSize)}`;
     if (excluded) message += `；已排除 ${formatNumber(excluded)} 个未勾选类型。`;
     else message += "。";
-  } else if (currentRecords.length) {
+  } else if (currentRecords.length && copyRecords.length) {
     state = "blocked";
     message = "当前勾选类型里没有可复制素材，可以重新勾选或检查分类规则。";
+  } else if (currentRecords.length) {
+    state = "empty";
+    message = "当前扫描结果没有可直接复制的开放素材，只保留封包提示和清单。";
   }
 
   categorySelectionSummary.dataset.state = state;
@@ -1897,7 +1971,11 @@ function sanitizeHelpText(text) {
 
 function getSelectedCopyRecords() {
   const selectedIds = selectedCategoryIds();
-  return currentRecords.filter((record) => record.category.copy && selectedIds.has(record.category.id));
+  return getCopyableRecords().filter((record) => selectedIds.has(record.category.id));
+}
+
+function getCopyableRecords(records = currentRecords) {
+  return records.filter((record) => record.category.copy);
 }
 
 async function copyRecord(record, resultRoot) {
@@ -2002,10 +2080,13 @@ function countBy(items, getter) {
 }
 
 function summarizeRecords(records) {
-  const copyRecords = records.filter((record) => record.category.copy);
+  const copyRecords = getCopyableRecords(records);
   const selectedIds = selectedCategoryIds();
   const selectedRecords = copyRecords.filter((record) => selectedIds.has(record.category.id));
   const archives = records.filter((record) => record.category.id === "archive");
+  if (!copyRecords.length) {
+    return `未发现可整理开放素材，${formatNumber(archives.length)} 个封包提示。`;
+  }
   if (selectedRecords.length === copyRecords.length) {
     return `将整理 ${formatNumber(selectedRecords.length)} 个开放素材，${formatNumber(archives.length)} 个封包提示。`;
   }
@@ -2023,6 +2104,7 @@ function render() {
   }
 
   const selected = getSelectedCopyRecords();
+  const copyRecords = getCopyableRecords();
   const archives = currentRecords.filter((record) => record.category.id === "archive");
   const texts = currentRecords.filter((record) => record.category.id === "text");
   const totalSize = selected.reduce((sum, record) => sum + record.size, 0);
@@ -2032,6 +2114,7 @@ function render() {
     copySizeText: formatBytes(totalSize),
     archiveTotal: archives.length,
     textTotal: texts.length,
+    copyableTotal: copyRecords.length,
   });
 
   overviewPanel.innerHTML = renderOverview(selected, archives);
