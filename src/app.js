@@ -28,6 +28,7 @@ const categoryOptions = document.querySelector("#categoryOptions");
 const categorySelectionSummary = document.querySelector("#categorySelectionSummary");
 const projectTitle = document.querySelector("#projectTitle");
 const statusPill = document.querySelector("#statusPill");
+const summaryStrip = document.querySelector(".summary-strip");
 const selectedAssetCount = document.querySelector("#selectedAssetCount");
 const copySize = document.querySelector("#copySize");
 const archiveCount = document.querySelector("#archiveCount");
@@ -265,6 +266,11 @@ function setSummaryMetric(metric, valueElement, valueText, ariaLabel, state = "e
   else delete metric.dataset.summaryNote;
 }
 
+function updateSummaryStripLabel(parts) {
+  if (!(summaryStrip instanceof HTMLElement)) return;
+  summaryStrip.setAttribute("aria-label", `整理摘要：${parts.filter(Boolean).join("；")}`);
+}
+
 function updateSummaryMetrics({ selectedCount, copySizeText, archiveTotal, textTotal, copyableTotal = selectedCount }) {
   const hasRecords = currentRecords.length > 0;
   const hasCopyableRecords = copyableTotal > 0;
@@ -334,6 +340,12 @@ function updateSummaryMetrics({ selectedCount, copySizeText, archiveTotal, textT
     textTotal > 0 ? "active" : "empty",
     textNote,
   );
+  updateSummaryStripLabel([
+    `${selectedLabel}，${selectedNote}`,
+    `${copyLabel}，${copyNote}`,
+    `封包提示 ${archiveText} 个，${archiveNote}`,
+    `文本脚本 ${textTotalText} 个，${textNote}`,
+  ]);
 }
 
 function getResultViewState() {
