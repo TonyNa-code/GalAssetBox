@@ -483,6 +483,7 @@ function updateActionState() {
   const hasSource = Boolean(sourceHandle || desktopSource);
   const hasOutput = Boolean(outputHandle || desktopOutput);
   const selectedCopyCount = getSelectedCopyRecords().length;
+  const selectedCategoryCount = selectedCategoryIds().size;
   const hasSelectedCopyRecords = !currentRecords.length || selectedCopyCount > 0;
   pickSourceButton.disabled = busy || (!hasDirectoryPicker && !desktopBridge);
   pickOutputButton.disabled = busy || (!hasDirectoryPicker && !desktopBridge);
@@ -496,14 +497,16 @@ function updateActionState() {
   advancedModeButton.disabled = busy;
   updateFolderStatus(hasSource, hasOutput);
   updateActionHint(hasSource, hasOutput);
-  updatePrimaryActionLabels(hasSource, selectedCopyCount);
+  updatePrimaryActionLabels(hasSource, selectedCopyCount, selectedCategoryCount);
   updateAdvancedActionLabels();
 }
 
-function updatePrimaryActionLabels(hasSource, selectedCopyCount) {
+function updatePrimaryActionLabels(hasSource, selectedCopyCount, selectedCategoryCount = selectedCategoryIds().size) {
   scanButton.textContent = hasSource && currentRecords.length ? "重新扫描素材" : "扫描素材";
   if (!hasSource || !currentRecords.length) {
     organizeButton.textContent = "开始整理";
+  } else if (!selectedCategoryCount) {
+    organizeButton.textContent = "未选类型";
   } else if (!selectedCopyCount) {
     organizeButton.textContent = "无可整理素材";
   } else {
@@ -557,6 +560,7 @@ function updateActionHint(hasSource, hasOutput) {
   const hasRecords = currentRecords.length > 0;
   const selectedCopyCount = hasRecords ? getSelectedCopyRecords().length : 0;
   const copyableCount = hasRecords ? getCopyableRecords().length : 0;
+  const selectedCategoryCount = hasRecords ? selectedCategoryIds().size : 0;
   let state = "blocked";
   let message = "先选择游戏文件夹。";
 
@@ -574,7 +578,9 @@ function updateActionHint(hasSource, hasOutput) {
     message = "源目录已选择，下一步扫描素材。";
   } else if (hasSource && hasRecords && !selectedCopyCount && copyableCount) {
     state = "blocked";
-    message = "当前勾选类型里没有可整理素材，请重新勾选类型或查看封包提示。";
+    message = selectedCategoryCount
+      ? "当前勾选类型里没有可整理素材，请重新勾选类型或查看封包提示。"
+      : "当前没有选择任何素材类型，请先勾选类型或点“全部”。";
   } else if (hasSource && hasRecords && !selectedCopyCount) {
     state = "warn";
     message = "扫描完成，但没有可直接整理的开放素材；可查看封包提示或导出求助摘要。";
@@ -925,17 +931,35 @@ function updateCategorySelectionSummary() {
   const selected = getSelectedCopyRecords();
   const selectedSize = selected.reduce((sum, record) => sum + record.size, 0);
   const excluded = copyRecords.length - selected.length;
+  const selectedIds = selectedCategoryIds();
+  const metrics = getCategoryMetrics();
+  const emptySelectedDefinitions = currentRecords.length
+    ? CATEGORY_DEFS.filter((definition) => selectedIds.has(definition.id) && !(metrics.get(definition.id)?.count || 0))
+    : [];
+  const emptySelectedNames = emptySelectedDefinitions.map((definition) => definition.label);
+  const emptySelectedText = emptySelectedNames.length
+    ? `已勾选但暂无素材：${emptySelectedNames.slice(0, 4).join("、")}${emptySelectedNames.length > 4 ? "等" : ""}`
+    : "";
   let state = "empty";
   let message = "扫描后显示当前勾选类型的预计复制量。";
 
   if (currentRecords.length && selected.length) {
-    state = excluded ? "partial" : "ready";
+    state = excluded || emptySelectedDefinitions.length ? "partial" : "ready";
     message = `当前会复制 ${formatNumber(selected.length)} 个开放素材，约 ${formatBytes(selectedSize)}`;
-    if (excluded) message += `；已排除 ${formatNumber(excluded)} 个未勾选类型。`;
+    const notes = [];
+    if (excluded) notes.push(`已排除 ${formatNumber(excluded)} 个未勾选类型`);
+    if (emptySelectedText) notes.push(emptySelectedText);
+    if (notes.length) message += `；${notes.join("；")}。`;
     else message += "。";
   } else if (currentRecords.length && copyRecords.length) {
     state = "blocked";
-    message = "当前勾选类型里没有可复制素材，可以重新勾选或检查分类规则。";
+    if (!selectedIds.size) {
+      message = "当前没有选择任何素材类型；请选择“全部”或至少一种有素材的类型。";
+    } else if (emptySelectedText) {
+      message = `${emptySelectedText}；可以重新勾选有素材的类型或检查分类规则。`;
+    } else {
+      message = "当前勾选类型里没有可复制素材，可以重新勾选或检查分类规则。";
+    }
   } else if (currentRecords.length) {
     state = "empty";
     message = "当前扫描结果没有可直接复制的开放素材，只保留封包提示和清单。";
@@ -943,6 +967,8 @@ function updateCategorySelectionSummary() {
 
   categorySelectionSummary.dataset.state = state;
   categorySelectionSummary.textContent = message;
+  categorySelectionSummary.setAttribute("aria-label", `类型选择摘要：${message}`);
+  categorySelectionSummary.title = message;
 }
 
 function getAuthorizedPlugins() {
