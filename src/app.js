@@ -497,11 +497,12 @@ function updateActionState() {
   advancedModeButton.disabled = busy;
   updateFolderStatus(hasSource, hasOutput);
   updateActionHint(hasSource, hasOutput);
-  updatePrimaryActionLabels(hasSource, selectedCopyCount, selectedCategoryCount);
+  updatePrimaryActionLabels(hasSource, hasOutput, selectedCopyCount, selectedCategoryCount);
+  updateNextStepCues({ hasSource, hasOutput, selectedCopyCount });
   updateAdvancedActionLabels();
 }
 
-function updatePrimaryActionLabels(hasSource, selectedCopyCount, selectedCategoryCount = selectedCategoryIds().size) {
+function updatePrimaryActionLabels(hasSource, hasOutput, selectedCopyCount, selectedCategoryCount = selectedCategoryIds().size) {
   scanButton.textContent = hasSource && currentRecords.length ? "重新扫描素材" : "扫描素材";
   if (!hasSource || !currentRecords.length) {
     organizeButton.textContent = "开始整理";
@@ -509,6 +510,8 @@ function updatePrimaryActionLabels(hasSource, selectedCopyCount, selectedCategor
     organizeButton.textContent = "未选类型";
   } else if (!selectedCopyCount) {
     organizeButton.textContent = "无可整理素材";
+  } else if (!hasOutput) {
+    organizeButton.textContent = "待选输出";
   } else {
     organizeButton.textContent = `整理 ${formatNumber(selectedCopyCount)} 个素材`;
   }
@@ -552,6 +555,40 @@ function setFolderButtonLabel(button, targetLabel, folderLabel, folderStatus) {
   const buttonLabel = button.textContent.trim();
   const availability = button.disabled ? "当前不可用" : "可用";
   button.setAttribute("aria-label", `${buttonLabel}：${targetLabel}：${folderLabel || "未选择"}，${folderStatus}，${availability}`);
+}
+
+function setNextStepCue(element, active, label, { current = true } = {}) {
+  if (!(element instanceof HTMLElement)) return;
+  if (!active) {
+    delete element.dataset.nextAction;
+    element.removeAttribute("aria-current");
+    if (element.title === label) element.removeAttribute("title");
+    return;
+  }
+
+  element.dataset.nextAction = "true";
+  if (current) element.setAttribute("aria-current", "step");
+  else element.removeAttribute("aria-current");
+  element.title = label;
+  const currentLabel = element.getAttribute("aria-label") || element.textContent.trim();
+  if (currentLabel && !currentLabel.includes(label)) {
+    element.setAttribute("aria-label", `${label}；${currentLabel}`);
+  }
+}
+
+function updateNextStepCues({ hasSource, hasOutput, selectedCopyCount }) {
+  const scanNextLabel = "下一步：扫描素材";
+  const outputNextLabel = "下一步：选择输出文件夹";
+  const needsScan = !busy && hasSource && !currentRecords.length;
+  const needsOutput = !busy && hasSource && currentRecords.length > 0 && selectedCopyCount > 0 && !hasOutput;
+  setNextStepCue(scanButton, needsScan, scanNextLabel);
+  setNextStepCue(pickOutputButton, needsOutput, outputNextLabel);
+  setNextStepCue(outputPathBox, needsOutput, outputNextLabel, { current: false });
+  if (!needsOutput) return;
+
+  const outputLabel = outputName.textContent.trim() || "未选择";
+  outputState.textContent = "下一步";
+  outputPathBox.setAttribute("aria-label", `输出目录：${outputLabel}，${outputNextLabel}`);
 }
 
 function updateActionHint(hasSource, hasOutput) {
