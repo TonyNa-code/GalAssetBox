@@ -233,19 +233,30 @@ function nowStamp() {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}`;
 }
 
+function buildProgressValueText(title, detail, progress) {
+  const cleanDetail = String(detail || "").trim().replace(/[。！？.!?]+$/, "");
+  return cleanDetail ? `${title}，${cleanDetail}，${progress}%` : `${title}，${progress}%`;
+}
+
+function syncProgressA11y() {
+  const title = progressTitle.textContent.trim();
+  const detail = progressDetail.textContent.trim();
+  const progress = Number(progressTrack.getAttribute("aria-valuenow") || 0);
+  const valueText = buildProgressValueText(title, detail, progress);
+  progressTrack.setAttribute("aria-valuetext", valueText);
+  progressPanel.setAttribute("aria-label", `任务进度：${valueText}`);
+  progressPanel.title = valueText;
+}
+
 function setProgress(title, detail, progress = 0, tone = "neutral") {
   const boundedProgress = Math.max(0, Math.min(100, progress));
   const roundedProgress = Math.round(boundedProgress);
-  const cleanDetail = String(detail || "").trim().replace(/[。！？.!?]+$/, "");
   progressTitle.textContent = title;
   progressDetail.textContent = detail;
   progressTrack.setAttribute("aria-valuenow", String(roundedProgress));
-  progressTrack.setAttribute(
-    "aria-valuetext",
-    cleanDetail ? `${title}，${cleanDetail}，${roundedProgress}%` : `${title}，${roundedProgress}%`,
-  );
   progressBar.style.width = `${boundedProgress}%`;
   progressPanel.className = `progress-panel ${tone}`;
+  syncProgressA11y();
 }
 
 function setStatus(label, className = "neutral") {
@@ -897,8 +908,13 @@ function updateCategoryOptionMetrics() {
     const metric = metrics.get(definition.id) || { count: 0, size: 0 };
     const countText = formatNumber(metric.count);
     const sizeText = metric.count ? formatBytes(metric.size) : "0 B";
+    const metricState = !currentRecords.length ? "pending" : metric.count ? "filled" : "empty";
+    const metricStatus = metricState === "pending" ? "待扫描" : metric.count ? "有素材" : "未找到素材";
+    const selectionText = input?.checked ? "已勾选" : "未勾选";
     option.dataset.empty = metric.count ? "false" : "true";
-    if (input) input.setAttribute("aria-label", `${definition.label}，${countText} 个文件，${sizeText}`);
+    option.dataset.metricState = metricState;
+    option.title = `${definition.label}：${metricStatus}，${countText} 个文件，${sizeText}`;
+    if (input) input.setAttribute("aria-label", `${definition.label}，${countText} 个文件，${sizeText}，${metricStatus}，${selectionText}`);
     if (count) count.textContent = countText;
     if (size) size.textContent = sizeText;
   }
@@ -2152,6 +2168,7 @@ function updateCompletedScanProgressSummary() {
   const titles = new Set(["扫描完成", "样例已载入", "清单已生成"]);
   if (!titles.has(progressTitle.textContent.trim())) return;
   progressDetail.textContent = summarizeRecords(currentRecords);
+  syncProgressA11y();
 }
 
 function renderEmpty() {
