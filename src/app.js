@@ -373,26 +373,28 @@ function getResultViewState() {
   const selectedCount = getSelectedCopyRecords().length;
   const archiveTotal = currentRecords.filter((record) => record.category.id === "archive").length;
   const pluginTotal = describeAuthorizedPlugins().length;
+  const hasRecords = currentRecords.length > 0;
+  const logTotal = currentLog.length;
   return {
     overview: {
-      description: currentRecords.length ? `${formatNumber(selectedCount)} 个将整理素材` : "等待扫描结果",
-      count: currentRecords.length ? formatNumber(selectedCount) : "",
+      description: hasRecords ? `${formatNumber(selectedCount)} 个将整理素材` : "等待扫描结果",
+      count: hasRecords ? formatNumber(selectedCount) : "",
     },
     categories: {
-      description: `${formatNumber(currentRecords.length)} 个文件`,
-      count: formatNumber(currentRecords.length),
+      description: hasRecords ? `${formatNumber(currentRecords.length)} 个文件` : "等待扫描分类",
+      count: hasRecords ? formatNumber(currentRecords.length) : "",
     },
     archives: {
-      description: `${formatNumber(archiveTotal)} 个封包提示`,
-      count: formatNumber(archiveTotal),
+      description: hasRecords ? `${formatNumber(archiveTotal)} 个封包提示` : "等待封包提示",
+      count: hasRecords ? formatNumber(archiveTotal) : "",
     },
     authorizedPlugins: {
       description: `${formatNumber(pluginTotal)} 个授权插件`,
-      count: formatNumber(pluginTotal),
+      count: pluginTotal ? formatNumber(pluginTotal) : "",
     },
     log: {
-      description: `${formatNumber(currentLog.length)} 条日志`,
-      count: formatNumber(currentLog.length),
+      description: logTotal ? `${formatNumber(logTotal)} 条日志` : "暂无日志",
+      count: logTotal ? formatNumber(logTotal) : "",
     },
   };
 }
@@ -2269,7 +2271,7 @@ function renderEmpty() {
 
 function renderPanelEmptyState(title, body, tags = []) {
   const tagList = tags.length
-    ? `<div class="panel-empty-tags">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>`
+    ? `<div class="empty-state-tags">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>`
     : "";
   return `
     <div class="empty-state panel-empty">

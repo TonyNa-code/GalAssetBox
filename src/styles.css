@@ -1778,7 +1778,7 @@ body[data-mode="beginner"] .advanced-only {
   min-height: 320px;
 }
 
-.panel-empty-tags {
+.empty-state-tags {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -1786,7 +1786,7 @@ body[data-mode="beginner"] .advanced-only {
   max-width: min(100%, 360px);
 }
 
-.panel-empty-tags span {
+.empty-state-tags span {
   border: 1px solid rgba(68, 81, 90, 0.14);
   border-radius: 999px;
   padding: 4px 8px;
