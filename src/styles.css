@@ -1774,6 +1774,30 @@ body[data-mode="beginner"] .advanced-only {
   text-align: center;
 }
 
+.panel-empty {
+  min-height: 320px;
+}
+
+.panel-empty-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: min(100%, 360px);
+}
+
+.panel-empty-tags span {
+  border: 1px solid rgba(68, 81, 90, 0.14);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .empty-glyph {
   width: 108px;
   height: 76px;

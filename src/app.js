@@ -2246,11 +2246,39 @@ function renderEmpty() {
     textTotal: 0,
   });
   overviewPanel.innerHTML = empty;
-  categoriesPanel.innerHTML = empty;
-  archivesPanel.innerHTML = empty;
+  categoriesPanel.innerHTML = renderPanelEmptyState(
+    "等待扫描分类",
+    "选择游戏文件夹并扫描后，这里会按 CG、立绘、音乐、文本等类型显示数量和样例路径。",
+    ["分类计数", "样例路径", "选择同步"],
+  );
+  archivesPanel.innerHTML = renderPanelEmptyState(
+    "扫描后显示封包提示",
+    "发现常见资源封包时会列在这里。只写清单，不拆包。",
+    ["只列清单", "不拆包", "授权插件"],
+  );
   authorizedPluginsPanel.innerHTML = renderAuthorizedPlugins();
-  logPanel.innerHTML = currentLog.length ? renderLog() : empty;
+  logPanel.innerHTML = currentLog.length
+    ? renderLog()
+    : renderPanelEmptyState(
+      "暂无运行日志",
+      "选择文件夹、扫描素材、导出摘要或运行授权插件后，这里会记录本地操作过程。",
+      ["本地操作", "导出摘要", "插件记录"],
+    );
   updateResultTabLabels();
+}
+
+function renderPanelEmptyState(title, body, tags = []) {
+  const tagList = tags.length
+    ? `<div class="panel-empty-tags">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>`
+    : "";
+  return `
+    <div class="empty-state panel-empty">
+      <div class="empty-glyph" aria-hidden="true"></div>
+      <h3>${escapeHtml(title)}</h3>
+      <p>${escapeHtml(body)}</p>
+      ${tagList}
+    </div>
+  `;
 }
 
 function renderOverview(selected, archives) {
