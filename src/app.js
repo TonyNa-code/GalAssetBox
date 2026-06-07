@@ -261,8 +261,10 @@ function setProgress(title, detail, progress = 0, tone = "neutral") {
 
 function setStatus(label, className = "neutral") {
   const displayLabel = STATUS_LABELS[label] || label;
+  const statusLabel = `当前状态：${displayLabel}`;
   statusPill.textContent = displayLabel;
-  statusPill.setAttribute("aria-label", `当前状态：${displayLabel}`);
+  statusPill.setAttribute("aria-label", statusLabel);
+  statusPill.title = statusLabel;
   statusPill.className = `status-pill ${className}`;
 }
 

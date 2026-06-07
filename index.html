@@ -145,31 +145,80 @@
               <p class="eyebrow">本地整理器</p>
               <h2 id="projectTitle">等待选择文件夹</h2>
             </div>
-            <div id="statusPill" class="status-pill neutral" role="status" aria-live="polite" aria-label="当前状态：准备就绪">
+            <div
+              id="statusPill"
+              class="status-pill neutral"
+              role="status"
+              aria-live="polite"
+              aria-label="当前状态：准备就绪"
+              title="当前状态：准备就绪"
+            >
               准备就绪
             </div>
           </header>
 
-          <dl class="summary-strip" aria-label="整理摘要" aria-live="polite" aria-atomic="false">
-            <div data-summary-metric="selected" role="group" aria-label="将整理 0 个素材">
+          <dl
+            class="summary-strip"
+            aria-label="整理摘要：将整理 0 个素材，待扫描；预计复制 0 B，待扫描；封包提示 0 个，待扫描；文本脚本 0 个，待扫描"
+            title="整理摘要：将整理 0 个素材，待扫描；预计复制 0 B，待扫描；封包提示 0 个，待扫描；文本脚本 0 个，待扫描"
+            aria-live="polite"
+            aria-atomic="false"
+            data-state="empty"
+          >
+            <div
+              data-summary-metric="selected"
+              data-state="empty"
+              data-summary-note="待扫描"
+              role="group"
+              aria-label="将整理 0 个素材，状态：待扫描"
+              title="将整理 0 个素材，状态：待扫描"
+            >
               <dt>将整理</dt>
               <dd><span id="selectedAssetCount">0</span></dd>
             </div>
-            <div data-summary-metric="copySize" role="group" aria-label="预计复制 0 B">
+            <div
+              data-summary-metric="copySize"
+              data-state="empty"
+              data-summary-note="待扫描"
+              role="group"
+              aria-label="预计复制 0 B，状态：待扫描"
+              title="预计复制 0 B，状态：待扫描"
+            >
               <dt>预计复制</dt>
               <dd><span id="copySize">0 B</span></dd>
             </div>
-            <div data-summary-metric="archives" role="group" aria-label="发现 0 个封包提示">
+            <div
+              data-summary-metric="archives"
+              data-state="empty"
+              data-summary-note="待扫描"
+              role="group"
+              aria-label="发现 0 个封包提示，状态：待扫描"
+              title="发现 0 个封包提示，状态：待扫描"
+            >
               <dt>封包提示</dt>
               <dd><span id="archiveCount">0</span></dd>
             </div>
-            <div data-summary-metric="texts" role="group" aria-label="文本脚本 0 个">
+            <div
+              data-summary-metric="texts"
+              data-state="empty"
+              data-summary-note="待扫描"
+              role="group"
+              aria-label="文本脚本 0 个，状态：待扫描"
+              title="文本脚本 0 个，状态：待扫描"
+            >
               <dt>文本脚本</dt>
               <dd><span id="textCount">0</span></dd>
             </div>
           </dl>
 
-          <section id="progressPanel" class="progress-panel" aria-label="任务进度" aria-live="polite" aria-atomic="false">
+          <section
+            id="progressPanel"
+            class="progress-panel"
+            aria-label="任务进度：准备就绪，选择游戏文件夹后开始扫描，0%"
+            aria-live="polite"
+            aria-atomic="false"
+            title="准备就绪，选择游戏文件夹后开始扫描，0%"
+          >
             <div>
               <strong id="progressTitle">准备就绪</strong>
               <span id="progressDetail">选择游戏文件夹后开始扫描。</span>
