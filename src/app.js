@@ -189,6 +189,7 @@ let extractorStatus = null;
 let extractionPlan = null;
 let lastExtractionRun = null;
 let attemptedCommonArchivePaths = new Set();
+let sourceContextNotice = "";
 let busy = false;
 const toastControllers = new WeakMap();
 
@@ -538,7 +539,8 @@ function updateActionState() {
 }
 
 function updatePrimaryActionLabels(hasSource, hasOutput, selectedCopyCount, selectedCategoryCount = selectedCategoryIds().size) {
-  const commonArchiveCount = getPendingCommonArchiveRecords().length;
+  const totalCommonArchiveCount = getCommonArchiveRecords().length;
+  const pendingCommonArchiveCount = getPendingCommonArchiveRecords().length;
   scanButton.textContent = hasSource && currentRecords.length ? "重新扫描素材" : "扫描素材";
   if (!hasSource || !currentRecords.length) {
     organizeButton.textContent = "开始整理";
@@ -551,8 +553,12 @@ function updatePrimaryActionLabels(hasSource, hasOutput, selectedCopyCount, sele
   } else {
     organizeButton.textContent = `整理 ${formatNumber(selectedCopyCount)} 个素材`;
   }
-  extractCommonArchivesButton.textContent = commonArchiveCount
-    ? `通用解包 ${formatNumber(commonArchiveCount)} 个`
+  extractCommonArchivesButton.textContent = pendingCommonArchiveCount
+    ? pendingCommonArchiveCount > MAX_COMMON_ARCHIVE_RUN
+      ? `通用解包前 ${formatNumber(MAX_COMMON_ARCHIVE_RUN)} / 共 ${formatNumber(pendingCommonArchiveCount)}`
+      : `通用解包 ${formatNumber(pendingCommonArchiveCount)} 个`
+    : totalCommonArchiveCount
+      ? "本批已尝试"
     : "运行通用解包";
   const actionMessage = actionHint.textContent.trim();
   setActionButtonLabel(scanButton, actionMessage);
@@ -1205,6 +1211,14 @@ function getCommonArchiveActionReason(commonArchiveCount = getCommonArchiveRecor
   return "输出后可一键扫描解包输出。";
 }
 
+function getCommonArchiveButtonLabel(pendingCount = getPendingCommonArchiveRecords().length) {
+  if (!pendingCount) return "运行通用解包";
+  const batchCount = Math.min(pendingCount, MAX_COMMON_ARCHIVE_RUN);
+  return pendingCount > MAX_COMMON_ARCHIVE_RUN
+    ? `通用解包前 ${formatNumber(batchCount)} / 共 ${formatNumber(pendingCount)}`
+    : `通用解包 ${formatNumber(batchCount)} 个`;
+}
+
 function getExtractorToolsForConfig() {
   return Object.values(extractorStatus?.tools || {});
 }
@@ -1306,6 +1320,7 @@ async function pickSource() {
     lastExtractionRun = null;
     extractionPlan = null;
     resetCommonArchiveRunState();
+    sourceContextNotice = "";
     currentLog = [`已选择桌面源目录：${picked.name}`];
     setProgress("已选择游戏文件夹", "点击扫描素材查看可整理内容。", 10, "neutral");
     updateActionState();
@@ -1326,6 +1341,7 @@ async function pickSource() {
   lastExtractionRun = null;
   extractionPlan = null;
   resetCommonArchiveRunState();
+  sourceContextNotice = "";
   currentLog = [`已选择源目录：${sourceHandle.name}`];
   setProgress("已选择游戏文件夹", "点击扫描素材查看可整理内容。", 10, "neutral");
   updateActionState();
@@ -1647,6 +1663,7 @@ async function useExtractionResultAsSource(targetPath) {
   }
 
   try {
+    const previousResultRootName = lastExtractionRun?.resultRootName || "";
     const picked = await desktopBridge.useDirectoryAsSource(targetPath);
     desktopSource = picked;
     sourceHandle = null;
@@ -1658,6 +1675,7 @@ async function useExtractionResultAsSource(targetPath) {
     lastExtractionRun = null;
     extractionPlan = null;
     resetCommonArchiveRunState();
+    sourceContextNotice = `当前源目录来自通用解包输出${previousResultRootName ? `：${previousResultRootName}` : ""}。可以继续整理，或重新选择游戏文件夹返回原始目录。`;
     currentLog = [`已切换到解包输出目录：${picked.name}`];
     setProgress("已切换源目录", "正在扫描解包后的素材。", 15, "active");
     updateActionState();
@@ -2749,6 +2767,7 @@ function renderPanelEmptyState(title, body, tags = []) {
 function renderOverview(selected, archives) {
   const commonArchiveTotal = getCommonArchiveRecords().length;
   const pendingCommonArchives = getPendingCommonArchiveRecords().length;
+  const commonActionReason = getCommonArchiveActionReason(commonArchiveTotal);
   const canExtractCommon = Boolean(
     desktopBridge
       && desktopSource
@@ -2766,14 +2785,15 @@ function renderOverview(selected, archives) {
       <h3>整理预览</h3>
       <span>${escapeHtml(disabledText)}</span>
     </div>
+    ${sourceContextNotice ? `<article class="notice-card source-context"><h4>当前源目录</h4><p>${escapeHtml(sourceContextNotice)}</p></article>` : ""}
     ${renderPreflightSummary(selected, archives)}
     <div class="result-action-row">
       ${archives.length ? `<button id="showArchivesFromOverviewButton" type="button">查看封包路线</button>` : ""}
-      ${pendingCommonArchives ? `<button id="extractCommonArchivesOverviewButton" type="button" ${canExtractCommon ? "" : "disabled"}>通用解包 ${formatNumber(Math.min(pendingCommonArchives, MAX_COMMON_ARCHIVE_RUN))} 个</button>` : ""}
+      ${pendingCommonArchives ? `<button id="extractCommonArchivesOverviewButton" type="button" title="${escapeHtml(commonActionReason)}" aria-label="${escapeHtml(`${getCommonArchiveButtonLabel(pendingCommonArchives)}：${commonActionReason}`)}" ${canExtractCommon ? "" : "disabled"}>${escapeHtml(getCommonArchiveButtonLabel(pendingCommonArchives))}</button>` : ""}
       ${lastExtractionRun?.desktopExtractedPath ? `<button type="button" data-use-extraction-source="${escapeHtml(lastExtractionRun.desktopExtractedPath)}">扫描解包输出</button>` : ""}
-      <button id="downloadHelpSummaryInlineButton" type="button">导出求助摘要</button>
-      <button id="downloadDiagnosticOverviewButton" type="button">导出诊断包</button>
-      <span>${commonArchiveTotal ? `普通压缩包候选 ${formatNumber(commonArchiveTotal)} 个，待处理 ${formatNumber(pendingCommonArchives)} 个。` : ""}求助摘要适合发群友；诊断包适合给开发者排查。</span>
+      <button id="downloadHelpSummaryInlineButton" type="button">给群友的求助摘要</button>
+      <button id="downloadDiagnosticOverviewButton" type="button">给开发者的诊断包</button>
+      <span>${commonArchiveTotal ? `普通压缩包候选 ${formatNumber(commonArchiveTotal)} 个，待处理 ${formatNumber(pendingCommonArchives)} 个；${escapeHtml(commonActionReason)} ` : ""}求助摘要适合发群友；诊断包适合给开发者排查。</span>
     </div>
     <div class="card-list">
       <article class="summary-card">
@@ -2945,8 +2965,8 @@ function renderCategoryRulePanel() {
         <p>把路径里包含某个词的开放文件固定识别为指定分类。封包仍然只做提示，不会因为规则变成可复制素材。</p>
       </div>
       <div class="rule-form">
-        <input id="ruleKeywordInput" type="text" maxlength="60" placeholder="例如 tachie、event、voice" />
-        <select id="ruleCategorySelect">
+        <input id="ruleKeywordInput" type="text" maxlength="60" aria-label="分类规则关键词" placeholder="例如 tachie、event、voice" />
+        <select id="ruleCategorySelect" aria-label="分类规则目标类型">
           ${CATEGORY_DEFS.map((definition) => `<option value="${escapeHtml(definition.id)}">${escapeHtml(definition.label)}</option>`).join("")}
         </select>
         <button id="addRuleButton" type="button">添加规则</button>
@@ -3114,7 +3134,7 @@ function renderExtractionRunPreview(run) {
           : ""
       }
       <div class="output-row-list">
-        ${sampleRows.map((row) => `<code>${escapeHtml(`${row.status} | ${row.sourcePath} -> ${row.outputPath}`)}</code>`).join("")}
+        ${sampleRows.map((row) => `<code>${escapeHtml(`${row.status} | ${row.sourcePath} -> ${row.outputPath} | ${formatNumber(row.fileCount || 0)} files | ${formatBytes(row.byteCount || 0)}`)}</code>`).join("")}
       </div>
       ${
         failedRows.length
@@ -3631,6 +3651,7 @@ function loadManifestFiles(files) {
   lastExtractionRun = null;
   extractionPlan = null;
   resetCommonArchiveRunState();
+  sourceContextNotice = "";
   sourceName.textContent = "清单模式";
   outputName.textContent = "未选择";
   projectTitle.textContent = "清单模式";
@@ -3715,6 +3736,7 @@ sampleButton.addEventListener("click", () => {
   lastExtractionRun = null;
   extractionPlan = null;
   resetCommonArchiveRunState();
+  sourceContextNotice = "";
   sourceName.textContent = "样例";
   outputName.textContent = "未选择";
   projectTitle.textContent = "样例预览";

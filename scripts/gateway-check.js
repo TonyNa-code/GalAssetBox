@@ -21,6 +21,7 @@ async function main() {
 
     await checkSafetyHelpers(tmpRoot);
     await checkRoutePlanning(srcRoot);
+    await checkRealpathInputGuard(tmpRoot);
     await checkOptionalZipExtraction(srcRoot, outRoot);
 
     console.log("ok - gateway behavior");
@@ -63,6 +64,46 @@ async function checkRoutePlanning(srcRoot) {
   assert.strictEqual(plan.summary.total, 1);
   assert.strictEqual(plan.routes[0].route, "visual-novel");
   assert(["adapter-needed", "external-ready"].includes(plan.routes[0].status));
+
+  const hcaPath = path.join(srcRoot, "voice.hca");
+  await fs.writeFile(hcaPath, Buffer.from("HCA\0", "binary"));
+  const audioPlan = await gateway.planExtraction(
+    srcRoot,
+    [{ relativePath: "voice.hca", ext: "hca", size: 4 }],
+    {
+      toolOverrides: {
+        ffmpeg: process.execPath,
+        vgmstream: path.join(srcRoot, "missing-vgmstream"),
+      },
+    },
+  );
+  assert.strictEqual(audioPlan.routes[0].route, "game-audio");
+  assert.strictEqual(audioPlan.routes[0].status, "tool-missing");
+  assert(audioPlan.routes[0].note.includes("vgmstream"), "game audio should require vgmstream");
+}
+
+async function checkRealpathInputGuard(tmpRoot) {
+  const sourceRoot = path.join(tmpRoot, "realpath-src");
+  const outputRoot = path.join(tmpRoot, "realpath-out");
+  const outsidePath = path.join(tmpRoot, "outside.zip");
+  await fs.mkdir(sourceRoot);
+  await fs.mkdir(outputRoot);
+  await fs.writeFile(outsidePath, "not a real zip");
+
+  try {
+    await fs.symlink(outsidePath, path.join(sourceRoot, "escape.zip"));
+  } catch (error) {
+    if (["EPERM", "EACCES"].includes(error.code)) return;
+    throw error;
+  }
+
+  await assert.rejects(() => gateway.extractCommonArchives({
+    sourceRoot,
+    outputRoot,
+    resultRootName: "Realpath_Guard",
+    records: [{ relativePath: "escape.zip", ext: "zip", size: 1 }],
+    toolOverrides: { sevenZip: process.execPath },
+  }), /指向源目录外/);
 }
 
 async function checkOptionalZipExtraction(srcRoot, outRoot) {

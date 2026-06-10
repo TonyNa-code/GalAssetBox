@@ -132,6 +132,13 @@ function checkPackageScripts() {
   } else {
     fail("release audit gate", "release:check must run npm audit --audit-level=moderate --omit=optional");
   }
+
+  const lock = JSON.parse(readText("package-lock.json"));
+  if (pkg.overrides?.tmp === "0.2.7" && lock.packages?.["node_modules/tmp"]?.version === "0.2.7") {
+    pass("tmp override pinned");
+  } else {
+    fail("tmp override pinned", "tmp must stay overridden and locked to 0.2.7");
+  }
 }
 
 function checkElectronSafety() {
@@ -153,6 +160,10 @@ function checkElectronSafety() {
     ["desktop:pick-extractor-tool", main],
     ["resolveOutputRoot", main],
     ["assertInsideRoot", main],
+    ["assertExistingInsideRegisteredRoot", main],
+    ["MAX_PLUGIN_OUTPUT_BYTES", main],
+    ["MAX_PLUGIN_OUTPUT_TOTAL_BYTES", main],
+    ["assertPluginOutputBudget", main],
     ["sanitizeExtractorStatus", main],
     ["GENERATED_DIR_PREFIXES", main],
     ["planExtraction(payload)", preload],
@@ -160,6 +171,8 @@ function checkElectronSafety() {
     ["useDirectoryAsSource(targetPath)", preload],
     ["pickExtractorTool(toolId)", preload],
     ["extractCommonArchives", gateway],
+    ["PolicyViolationError", gateway],
+    ["resolveExistingInside", gateway],
     ["sanitizeRuntimeText", gateway],
     ["getCommonArchiveTools", gateway],
   ];

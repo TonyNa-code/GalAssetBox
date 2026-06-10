@@ -53,6 +53,14 @@ const MAX_COMMON_ARCHIVE_RUN = 12;
 const MAX_EXTRACTED_FILES_PER_ARCHIVE = 20000;
 const MAX_EXTRACTED_BYTES_PER_ARCHIVE = 8 * 1024 * 1024 * 1024;
 
+class PolicyViolationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "PolicyViolationError";
+    this.policyViolation = true;
+  }
+}
+
 const TOOL_DEFS = [
   {
     id: "sevenZip",
@@ -144,7 +152,7 @@ async function getExtractorStatus(toolOverrides = {}) {
       commonArchive: Boolean(getCommonArchiveTool(tools)),
       visualNovel: Boolean(tools.garbro.available || tools.gameExtractor.available),
       unity: tools.assetRipper.available,
-      gameAudio: Boolean(tools.vgmstream.available || tools.ffmpeg.available),
+      gameAudio: tools.vgmstream.available,
       mediaProbe: Boolean(tools.ffprobe.available || tools.ffmpeg.available),
     },
   };
@@ -159,15 +167,24 @@ async function planExtraction(sourceRoot, records = [], options = {}) {
     const ext = String(record.ext || path.extname(relativePath).slice(1)).toLowerCase();
     if (!isRoutableExt(ext)) continue;
 
-    const absolutePath = resolveInside(sourceRoot, relativePath);
-    const signature = await readSignature(absolutePath);
-    planned.push(createPlanItem({
-      path: relativePath,
-      ext,
-      size: Number(record.size || 0),
-      signature,
-      tools: status.tools,
-    }));
+    try {
+      const absolutePath = await resolveExistingInside(sourceRoot, relativePath, "提取路线源文件");
+      const signature = await readSignature(absolutePath);
+      planned.push(createPlanItem({
+        path: relativePath,
+        ext,
+        size: Number(record.size || 0),
+        signature,
+        tools: status.tools,
+      }));
+    } catch (error) {
+      planned.push(createUnreadablePlanItem({
+        path: relativePath,
+        ext,
+        size: Number(record.size || 0),
+        error,
+      }));
+    }
   }
 
   return {
@@ -197,7 +214,7 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
   await fs.mkdir(extractRoot, { recursive: true });
 
   for (const [index, record] of selected.entries()) {
-    const sourcePath = resolveInside(sourceRoot, record.relativePath);
+    const sourcePath = await resolveExistingInside(sourceRoot, record.relativePath, "解包源文件");
     const sourceName = path.basename(record.relativePath, path.extname(record.relativePath));
     const targetName = `${String(index + 1).padStart(2, "0")}_${safeSegment(sourceName)}`;
     const targetDir = path.join(extractRoot, targetName);
@@ -235,6 +252,7 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
       } catch (error) {
         attempts.push({ tool: tool.label, status: "failed", message: trimToolOutput(error.message) });
         await fs.rm(attemptDir, { recursive: true, force: true });
+        if (error.policyViolation) break;
       }
     }
 
@@ -273,7 +291,7 @@ async function getCommonArchiveCandidates(sourceRoot, records = []) {
   for (const record of records) {
     const relativePath = normalizeRelativePath(record.relativePath || record.path);
     const ext = String(record.ext || path.extname(relativePath).slice(1)).toLowerCase();
-    const sourcePath = resolveInside(sourceRoot, relativePath);
+    const sourcePath = await resolveExistingInside(sourceRoot, relativePath, "通用压缩包候选");
     let signatureLabel = "";
     let isCommonArchive = COMMON_ARCHIVE_EXTS.has(ext);
 
@@ -293,6 +311,20 @@ async function getCommonArchiveCandidates(sourceRoot, records = []) {
     }
   }
   return candidates;
+}
+
+function createUnreadablePlanItem({ path: relativePath, ext, size, error }) {
+  return {
+    path: relativePath,
+    ext,
+    size,
+    route: "signature-scan",
+    label: "读取失败",
+    status: "inspect-only",
+    tool: "GalAssetBox",
+    note: `无法读取文件签名：${trimToolOutput(error.message)}`,
+    signature: "unreadable",
+  };
 }
 
 function createPlanItem({ path: relativePath, ext, size, signature, tools }) {
@@ -319,9 +351,13 @@ function createPlanItem({ path: relativePath, ext, size, signature, tools }) {
   } else if (GAME_AUDIO_EXTS.has(ext)) {
     route = "game-audio";
     label = "游戏音频";
-    status = tools.vgmstream.available || tools.ffmpeg.available ? "external-ready" : "tool-missing";
-    tool = tools.vgmstream.available ? "vgmstream-cli" : "vgmstream-cli / ffmpeg";
-    note = status === "external-ready" ? "已检测到音频工具；自动转码执行器待接入。" : "需要安装游戏音频解码工具。";
+    status = tools.vgmstream.available ? "external-ready" : "tool-missing";
+    tool = "vgmstream-cli";
+    note = tools.vgmstream.available
+      ? "已检测到 vgmstream；自动转码执行器待接入。"
+      : tools.ffmpeg.available
+        ? "已检测到 ffmpeg，但游戏音频仍需要 vgmstream-cli。"
+        : "需要安装游戏音频解码工具 vgmstream-cli。";
   } else if (MEDIA_PROBE_EXTS.has(ext) || detected.media) {
     route = "media-probe";
     label = "音视频探测";
@@ -598,11 +634,11 @@ async function inspectExtractedTree(root) {
       const stat = await fs.lstat(next);
       const realPath = await fs.realpath(next);
       if (!isInsideOrSame(rootRealPath, realPath)) {
-        throw new Error("解包结果包含指向输出目录外的路径。");
+        throw new PolicyViolationError("解包结果包含指向输出目录外的路径。");
       }
 
       if (stat.isSymbolicLink()) {
-        throw new Error("解包结果包含符号链接，请人工确认后再处理。");
+        throw new PolicyViolationError("解包结果包含符号链接，请人工确认后再处理。");
       }
       if (stat.isDirectory()) {
         await visit(next);
@@ -610,10 +646,10 @@ async function inspectExtractedTree(root) {
         fileCount += 1;
         byteCount += stat.size;
         if (fileCount > MAX_EXTRACTED_FILES_PER_ARCHIVE) {
-          throw new Error(`单个压缩包解出文件超过 ${MAX_EXTRACTED_FILES_PER_ARCHIVE} 个，已中止。`);
+          throw new PolicyViolationError(`单个压缩包解出文件超过 ${MAX_EXTRACTED_FILES_PER_ARCHIVE} 个，已中止。`);
         }
         if (byteCount > MAX_EXTRACTED_BYTES_PER_ARCHIVE) {
-          throw new Error(`单个压缩包解出内容超过 ${formatByteLimit(MAX_EXTRACTED_BYTES_PER_ARCHIVE)}，已中止。`);
+          throw new PolicyViolationError(`单个压缩包解出内容超过 ${formatByteLimit(MAX_EXTRACTED_BYTES_PER_ARCHIVE)}，已中止。`);
         }
       }
     }
@@ -623,6 +659,9 @@ async function inspectExtractedTree(root) {
 }
 
 function buildExtractionMarkdown(resultRootName, rows, { omitted = 0 } = {}) {
+  const extracted = rows.filter((row) => row.status === "extracted").length;
+  const failed = rows.filter((row) => row.status === "failed").length;
+  const totalBytes = rows.reduce((sum, row) => sum + Number(row.byteCount || 0), 0);
   const lines = [
     `# ${resultRootName}`,
     "",
@@ -631,7 +670,15 @@ function buildExtractionMarkdown(resultRootName, rows, { omitted = 0 } = {}) {
     "- 只处理用户确认的普通压缩包。",
     "- 输出写入独立目录，可再次作为源目录扫描。",
     `- 单次最多处理 ${MAX_COMMON_ARCHIVE_RUN} 个普通压缩包。`,
+    `- 单个压缩包最多 ${MAX_EXTRACTED_FILES_PER_ARCHIVE} 个文件、${formatByteLimit(MAX_EXTRACTED_BYTES_PER_ARCHIVE)} 解包输出。`,
     "- 不处理 DRM、授权绕过、第三方密钥或受保护封包解密。",
+    "",
+    "## 汇总",
+    "",
+    `- 成功：${extracted}`,
+    `- 失败：${failed}`,
+    `- 未处理：${omitted}`,
+    `- 已解出大小：${formatByteLimit(totalBytes)}`,
     "",
   ];
   if (omitted > 0) {
@@ -640,8 +687,8 @@ function buildExtractionMarkdown(resultRootName, rows, { omitted = 0 } = {}) {
   }
   lines.push("## 结果", "");
   for (const row of rows) {
-    lines.push(`- [${row.status}] ${row.sourcePath} -> ${row.outputPath} | ${row.tool} | ${row.fileCount} files${row.message ? ` | ${trimToolOutput(row.message)}` : ""}`);
-    if (row.attempts?.length > 1) {
+    lines.push(`- [${row.status}] ${row.sourcePath} -> ${row.outputPath} | ${row.tool} | ${row.fileCount} files | ${formatByteLimit(row.byteCount || 0)}${row.message ? ` | ${trimToolOutput(row.message)}` : ""}`);
+    if (row.attempts?.length) {
       lines.push(`  - 尝试链：${row.attempts.map((attempt) => `${attempt.tool}:${attempt.status}`).join(" -> ")}`);
     }
   }
@@ -689,6 +736,18 @@ function resolveInside(root, relativePath) {
   const resolved = path.resolve(root, ...normalizeRelative(relativePath));
   if (!isInsideOrSame(root, resolved)) throw new Error("路径超出源目录。");
   return resolved;
+}
+
+async function resolveExistingInside(root, relativePath, label) {
+  const resolved = resolveInside(root, relativePath);
+  const [rootRealPath, targetRealPath] = await Promise.all([
+    fs.realpath(root),
+    fs.realpath(resolved),
+  ]);
+  if (!isInsideOrSame(rootRealPath, targetRealPath)) {
+    throw new Error(`${label}指向源目录外。`);
+  }
+  return targetRealPath;
 }
 
 function normalizeRelative(relativePath) {

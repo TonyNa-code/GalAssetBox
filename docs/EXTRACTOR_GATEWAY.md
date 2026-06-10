@@ -26,7 +26,7 @@ It is not a universal cracker. It is a local routing layer that detects file typ
 
 4. Game audio
    - Examples: `.hca`, `.adx`, `.awb`, `.wem`, `.fsb`
-   - Tool route: `vgmstream-cli`, with `ffmpeg` as a media helper
+   - Tool route: `vgmstream-cli`; `ffmpeg` is only a helper for ordinary media and does not make game-audio routes ready by itself
    - Current status: route planning only
 
 5. Media probe
@@ -35,7 +35,7 @@ It is not a universal cracker. It is a local routing layer that detects file typ
    - Current status: route planning only
 
 6. Signature scan
-   - For unknown or ambiguous files, GalAssetBox reads a small header and reports what can be inferred.
+   - For routed archive candidates, GalAssetBox reads a small header and reports what can be inferred.
    - This is not decryption and cannot recover compressed or protected content by itself.
 
 ## Safety Boundary

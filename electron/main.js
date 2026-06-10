@@ -12,6 +12,9 @@ const {
 const selectedSourceRoots = new Set();
 const selectedOutputRoots = new Set();
 const EXTRACTOR_TOOL_CONFIG_FILE = "extractor-tools.json";
+const MAX_PLUGIN_OUTPUT_BYTES = 25 * 1024 * 1024;
+const MAX_PLUGIN_OUTPUT_TOTAL_BYTES = 100 * 1024 * 1024;
+const pluginOutputBytesByResultRoot = new Map();
 
 const SKIPPED_DIRS = new Set([
   ".git",
@@ -113,7 +116,7 @@ ipcMain.handle("desktop:organize-assets", async (_event, payload) => {
 
   for (const record of payload.records || []) {
     try {
-      const sourcePath = resolveInside(sourceRoot, record.relativePath);
+      const sourcePath = await resolveExistingInside(sourceRoot, record.relativePath, "整理源文件");
       const targetPath = path.join(
         resultRoot,
         safeSegment(record.categoryFolder),
@@ -136,11 +139,11 @@ ipcMain.handle("desktop:organize-assets", async (_event, payload) => {
 });
 
 ipcMain.handle("desktop:read-file-text", async (_event, filePath) => {
-  return fs.readFile(assertInsideRegisteredRoot(filePath, selectedSourceRoots, "读取文件"), "utf8");
+  return fs.readFile(await assertExistingInsideRegisteredRoot(filePath, selectedSourceRoots, "读取文件"), "utf8");
 });
 
 ipcMain.handle("desktop:read-file-array-buffer", async (_event, filePath) => {
-  const buffer = await fs.readFile(assertInsideRegisteredRoot(filePath, selectedSourceRoots, "读取文件"));
+  const buffer = await fs.readFile(await assertExistingInsideRegisteredRoot(filePath, selectedSourceRoots, "读取文件"));
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
 });
 
@@ -157,8 +160,11 @@ ipcMain.handle("desktop:write-plugin-output", async (_event, payload) => {
     ...splitSafe(output.path),
   );
   assertInsideRoot(resultRoot, targetPath, "插件输出");
+  const outputBytes = estimateBase64Bytes(output.base64 || "");
+  assertPluginOutputBudget(resultRoot, outputBytes);
   await fs.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.writeFile(targetPath, Buffer.from(output.base64 || "", "base64"));
+  pluginOutputBytesByResultRoot.set(resultRoot, (pluginOutputBytesByResultRoot.get(resultRoot) || 0) + outputBytes);
   return path.relative(resultRoot, targetPath).replaceAll(path.sep, "/");
 });
 
@@ -268,10 +274,23 @@ function resolveInside(root, relativePath) {
   return resolved;
 }
 
+async function resolveExistingInside(root, relativePath, label) {
+  return assertExistingInsideRoot(root, resolveInside(root, relativePath), label);
+}
+
 function assertInsideRegisteredRoot(targetPath, roots, label) {
   const resolved = path.resolve(String(targetPath || ""));
   for (const root of roots) {
     if (isInsideOrSame(root, resolved)) return resolved;
+  }
+  throw new Error(`${label}不在已选择的授权目录内。`);
+}
+
+async function assertExistingInsideRegisteredRoot(targetPath, roots, label) {
+  const resolved = path.resolve(String(targetPath || ""));
+  for (const root of roots) {
+    if (!isInsideOrSame(root, resolved)) continue;
+    return assertExistingInsideRoot(root, resolved, label);
   }
   throw new Error(`${label}不在已选择的授权目录内。`);
 }
@@ -286,6 +305,39 @@ function assertInsideRoot(root, targetPath, label) {
   if (!isInsideOrSame(root, targetPath)) {
     throw new Error(`${label}超出授权输出目录。`);
   }
+}
+
+async function assertExistingInsideRoot(root, targetPath, label) {
+  const [rootRealPath, targetRealPath] = await Promise.all([
+    fs.realpath(root),
+    fs.realpath(targetPath),
+  ]);
+  if (!isInsideOrSame(rootRealPath, targetRealPath)) {
+    throw new Error(`${label}指向授权目录外。`);
+  }
+  return targetRealPath;
+}
+
+function estimateBase64Bytes(value) {
+  const base64 = String(value || "").replace(/\s+/g, "");
+  if (!base64) return 0;
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+}
+
+function assertPluginOutputBudget(resultRoot, outputBytes) {
+  if (outputBytes > MAX_PLUGIN_OUTPUT_BYTES) {
+    throw new Error(`插件单文件输出超过 ${formatByteLimit(MAX_PLUGIN_OUTPUT_BYTES)}。`);
+  }
+  const used = pluginOutputBytesByResultRoot.get(resultRoot) || 0;
+  if (used + outputBytes > MAX_PLUGIN_OUTPUT_TOTAL_BYTES) {
+    throw new Error(`插件本次输出超过 ${formatByteLimit(MAX_PLUGIN_OUTPUT_TOTAL_BYTES)}。`);
+  }
+}
+
+function formatByteLimit(value) {
+  if (value >= 1024 * 1024) return `${Math.round(value / 1024 / 1024)} MB`;
+  return `${value} B`;
 }
 
 function assertKnownToolId(toolId) {
