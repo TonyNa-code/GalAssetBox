@@ -2,6 +2,7 @@ const pickSourceButton = document.querySelector("#pickSourceButton");
 const pickOutputButton = document.querySelector("#pickOutputButton");
 const scanButton = document.querySelector("#scanButton");
 const organizeButton = document.querySelector("#organizeButton");
+const extractCommonArchivesButton = document.querySelector("#extractCommonArchivesButton");
 const runPluginsButton = document.querySelector("#runPluginsButton");
 const importPluginButton = document.querySelector("#importPluginButton");
 const importPluginPackageButton = document.querySelector("#importPluginPackageButton");
@@ -57,7 +58,11 @@ const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "bmp", "webp", "gif", "tga", "
 const AUDIO_EXTS = new Set(["ogg", "mp3", "wav", "flac", "m4a", "aac", "opus", "mid", "midi"]);
 const VIDEO_EXTS = new Set(["mp4", "webm", "avi", "wmv", "mpg", "mpeg", "mkv", "mov"]);
 const TEXT_EXTS = new Set(["txt", "ks", "rpy", "rpyc", "json", "csv", "xml", "ini", "lua", "js", "po", "yaml", "yml"]);
-const ARCHIVE_EXTS = new Set(["xp3", "rpa", "rpi", "nsa", "ns2", "sar", "arc", "pck", "dat", "pak", "wolf", "unity3d", "assets"]);
+const COMMON_ARCHIVE_EXTS = new Set(["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "lzma", "cab", "iso", "lzh"]);
+const ENGINE_ARCHIVE_EXTS = new Set(["xp3", "rpa", "rpi", "nsa", "ns2", "sar", "arc", "pck", "dat", "pak", "wolf", "pac", "cpk", "afs", "ald", "int", "gxp", "cpz", "ypf", "unity3d", "assets", "bundle"]);
+const GAME_AUDIO_EXTS = new Set(["acb", "awb", "hca", "adx", "wem", "fsb", "at3", "xma", "xa", "dsp"]);
+const PROBE_MEDIA_EXTS = new Set(["movie"]);
+const ARCHIVE_EXTS = new Set([...COMMON_ARCHIVE_EXTS, ...ENGINE_ARCHIVE_EXTS, ...GAME_AUDIO_EXTS, ...PROBE_MEDIA_EXTS]);
 const SKIPPED_DIRS = new Set([
   ".git",
   "__macosx",
@@ -85,6 +90,8 @@ const STATUS_LABELS = {
   Copying: "整理中",
   Partial: "部分完成",
   Done: "已完成",
+  Extracting: "解包中",
+  Extracted: "已解包",
   Plugins: "插件处理中",
   Importing: "导入中",
   Imported: "已导入",
@@ -93,6 +100,7 @@ const STATUS_LABELS = {
   Sample: "样例预览",
 };
 const ADVANCED_ACTION_DESCRIPTIONS = new Map([
+  [extractCommonArchivesButton, "调用本机工具解开 zip、rar、7z 等普通外层压缩包"],
   [runPluginsButton, "运行已启用的授权插件处理匹配素材"],
   [importPluginButton, "导入可信本地 JavaScript 插件"],
   [importPluginPackageButton, "导入带 plugin.json 的本地插件包"],
@@ -106,6 +114,7 @@ const PLUGIN_PACKAGE_SAFETY_FLAGS = [
   "noDrmBypass",
   "noBundledThirdPartyKeys",
 ];
+const MAX_COMMON_ARCHIVE_RUN = 12;
 
 const CATEGORY_DEFS = [
   { id: "cg", label: "CG", folder: "01_CG", defaultEnabled: true },
@@ -168,6 +177,9 @@ let currentLog = [];
 let uiMode = loadUiMode();
 let lastOrganizeRun = null;
 let lastPluginRun = null;
+let extractorStatus = null;
+let extractionPlan = null;
+let lastExtractionRun = null;
 let busy = false;
 const toastControllers = new WeakMap();
 
@@ -374,6 +386,7 @@ function updateSummaryMetrics({ selectedCount, copySizeText, archiveTotal, textT
 function getResultViewState() {
   const selectedCount = getSelectedCopyRecords().length;
   const archiveTotal = currentRecords.filter((record) => record.category.id === "archive").length;
+  const readyArchiveTotal = extractionPlan?.summary?.ready || 0;
   const pluginTotal = describeAuthorizedPlugins().length;
   const hasRecords = currentRecords.length > 0;
   const logTotal = currentLog.length;
@@ -387,7 +400,11 @@ function getResultViewState() {
       count: hasRecords ? formatNumber(currentRecords.length) : "",
     },
     archives: {
-      description: hasRecords ? `${formatNumber(archiveTotal)} 个封包提示` : "等待封包提示",
+      description: hasRecords
+        ? readyArchiveTotal
+          ? `${formatNumber(archiveTotal)} 个封包，${formatNumber(readyArchiveTotal)} 个可通用解包`
+          : `${formatNumber(archiveTotal)} 个封包提示`
+        : "等待封包提示",
       count: hasRecords ? formatNumber(archiveTotal) : "",
     },
     authorizedPlugins: {
@@ -410,7 +427,9 @@ function updateResultTabLabels() {
     const label = tab.textContent.trim();
     const state = viewState[tabId] || { description: "结果视图", count: "" };
     const panel = document.querySelector(`#${tabId}Panel`);
-    tab.setAttribute("aria-label", `${label}：${state.description}，${selectedState}`);
+    const tabLabel = `${label}：${state.description}，${selectedState}`;
+    tab.setAttribute("aria-label", tabLabel);
+    tab.title = tabLabel;
     if (state.count) tab.setAttribute("data-tab-count", state.count);
     else tab.removeAttribute("data-tab-count");
     if (panel instanceof HTMLElement) {
@@ -467,6 +486,7 @@ function setBusy(isBusy) {
     pickOutputButton,
     scanButton,
     organizeButton,
+    extractCommonArchivesButton,
     runPluginsButton,
     importPluginButton,
     importPluginPackageButton,
@@ -489,10 +509,13 @@ function updateActionState() {
   const selectedCopyCount = getSelectedCopyRecords().length;
   const selectedCategoryCount = selectedCategoryIds().size;
   const hasSelectedCopyRecords = !currentRecords.length || selectedCopyCount > 0;
+  const commonArchiveCount = getCommonArchiveRecords().length;
+  const hasCommonExtractor = !extractionPlan || (extractionPlan.summary?.ready || 0) > 0;
   pickSourceButton.disabled = busy || (!hasDirectoryPicker && !desktopBridge);
   pickOutputButton.disabled = busy || (!hasDirectoryPicker && !desktopBridge);
   scanButton.disabled = busy || !hasSource;
   organizeButton.disabled = busy || !hasSource || !hasOutput || !hasSelectedCopyRecords;
+  extractCommonArchivesButton.disabled = busy || !desktopBridge || !hasSource || !hasOutput || !commonArchiveCount || !hasCommonExtractor;
   runPluginsButton.disabled = busy || !hasSource || !hasOutput;
   importPluginButton.disabled = busy;
   importPluginPackageButton.disabled = busy;
@@ -507,6 +530,7 @@ function updateActionState() {
 }
 
 function updatePrimaryActionLabels(hasSource, hasOutput, selectedCopyCount, selectedCategoryCount = selectedCategoryIds().size) {
+  const commonArchiveCount = getCommonArchiveRecords().length;
   scanButton.textContent = hasSource && currentRecords.length ? "重新扫描素材" : "扫描素材";
   if (!hasSource || !currentRecords.length) {
     organizeButton.textContent = "开始整理";
@@ -519,6 +543,9 @@ function updatePrimaryActionLabels(hasSource, hasOutput, selectedCopyCount, sele
   } else {
     organizeButton.textContent = `整理 ${formatNumber(selectedCopyCount)} 个素材`;
   }
+  extractCommonArchivesButton.textContent = commonArchiveCount
+    ? `通用解包 ${formatNumber(commonArchiveCount)} 个`
+    : "运行通用解包";
   const actionMessage = actionHint.textContent.trim();
   setActionButtonLabel(scanButton, actionMessage);
   setActionButtonLabel(organizeButton, actionMessage);
@@ -601,6 +628,7 @@ function updateActionHint(hasSource, hasOutput) {
   const hasRecords = currentRecords.length > 0;
   const selectedCopyCount = hasRecords ? getSelectedCopyRecords().length : 0;
   const copyableCount = hasRecords ? getCopyableRecords().length : 0;
+  const commonArchiveCount = hasRecords ? getCommonArchiveRecords().length : 0;
   const selectedCategoryCount = hasRecords ? selectedCategoryIds().size : 0;
   let state = "blocked";
   let message = "先选择游戏文件夹。";
@@ -624,7 +652,9 @@ function updateActionHint(hasSource, hasOutput) {
       : "当前没有选择任何素材类型，请先勾选类型或点“全部”。";
   } else if (hasSource && hasRecords && !selectedCopyCount) {
     state = "warn";
-    message = "扫描完成，但没有可直接整理的开放素材；可查看封包提示或导出求助摘要。";
+    message = commonArchiveCount
+      ? "扫描完成，开放素材很少；可在高级功能里先运行通用解包。"
+      : "扫描完成，但没有可直接整理的开放素材；可查看封包提示或导出求助摘要。";
   } else if (hasSource && hasRecords && !hasOutput) {
     state = "warn";
     message = "扫描完成；选择输出文件夹后即可开始整理。";
@@ -768,7 +798,7 @@ function categorizePath(path, ext) {
       label: "封包提示",
       folder: "封包提示_不复制",
       copy: false,
-      reason: "资源封包只记录清单，不解密、不拆包。",
+      reason: "资源封包进入路线规划，不解密、不绕过 DRM。",
     };
   }
 
@@ -1066,6 +1096,148 @@ function getTransformPluginMatches(records) {
   );
 }
 
+function getArchiveRecords(records = currentRecords) {
+  return records.filter((record) => record.category.id === "archive");
+}
+
+function getCommonArchiveRecords(records = currentRecords) {
+  return getArchiveRecords(records).filter((record) => COMMON_ARCHIVE_EXTS.has(record.ext));
+}
+
+function getExtractionPlanItem(record) {
+  return extractionPlan?.routes?.find((route) => route.path === record.path) || null;
+}
+
+async function refreshExtractorPlan({ quiet = false } = {}) {
+  if (!desktopBridge?.planExtraction || !desktopSource || !currentRecords.length) {
+    extractionPlan = null;
+    return;
+  }
+  const archives = getArchiveRecords();
+  if (!archives.length) {
+    extractionPlan = null;
+    extractorStatus = await desktopBridge.getExtractorStatus?.();
+    return;
+  }
+
+  try {
+    const plan = await desktopBridge.planExtraction({
+      sourceRootPath: desktopSource.path,
+      records: archives.map((record) => ({
+        relativePath: record.path,
+        ext: record.ext,
+        size: record.size,
+      })),
+    });
+    extractionPlan = plan;
+    extractorStatus = plan.status || null;
+    if (!quiet) {
+      currentLog.push(
+        `提取路线规划完成：${formatNumber(plan.summary?.total || 0)} 个封包，${formatNumber(plan.summary?.ready || 0)} 个可通用解包。`,
+      );
+    }
+  } catch (error) {
+    extractionPlan = null;
+    currentLog.push(`提取路线规划失败：${error.message}`);
+  }
+}
+
+function formatExtractionStatusLabel(status) {
+  const labels = {
+    ready: "可直接处理",
+    "external-ready": "工具已检测",
+    "tool-missing": "缺少工具",
+    "adapter-needed": "需适配器",
+    "inspect-only": "仅探测",
+  };
+  return labels[status] || status || "未知";
+}
+
+function getExtractionStatusTone(status) {
+  if (status === "ready" || status === "external-ready") return "enabled";
+  if (status === "tool-missing" || status === "adapter-needed") return "disabled";
+  return "";
+}
+
+function getAvailableExtractorTools() {
+  return Object.values(extractorStatus?.tools || {}).filter((tool) => tool.available);
+}
+
+function getCommonArchiveActionReason(commonArchiveCount = getCommonArchiveRecords().length) {
+  if (!desktopBridge) return "通用解包需要桌面版。";
+  if (!desktopSource) return "先选择真实源目录。";
+  if (!desktopOutput) return "先选择输出文件夹。";
+  if (!commonArchiveCount) return "没有 zip、rar、7z、tar 等普通压缩包候选。";
+  if (extractionPlan && !(extractionPlan.summary?.ready || 0)) return "缺少 7-Zip、bsdtar 或 unar。";
+  if (commonArchiveCount > MAX_COMMON_ARCHIVE_RUN) {
+    return `本轮将处理前 ${formatNumber(MAX_COMMON_ARCHIVE_RUN)} 个，剩余可分批运行。`;
+  }
+  return "输出后可重新扫描解包结果目录。";
+}
+
+function getExtractorToolsForConfig() {
+  return Object.values(extractorStatus?.tools || {});
+}
+
+function formatExtractorSource(source) {
+  const labels = {
+    manual: "手动路径",
+    "manual-missing": "手动路径失效",
+    path: "PATH 自动",
+    missing: "未找到",
+  };
+  return labels[source] || source || "未知";
+}
+
+function getExtractorToolTone(tool) {
+  if (tool?.available) return "enabled";
+  if (tool?.configured) return "disabled";
+  return "";
+}
+
+function formatExtractorToolLabel(toolId) {
+  return extractorStatus?.tools?.[toolId]?.label || toolId;
+}
+
+async function configureExtractorTool(toolId) {
+  if (!desktopBridge?.pickExtractorTool) {
+    showToast("只有桌面版可以绑定外部工具路径");
+    return;
+  }
+  try {
+    const result = await desktopBridge.pickExtractorTool(toolId);
+    if (!result || result.canceled) return;
+    extractorStatus = result.status || await desktopBridge.getExtractorStatus?.();
+    if (desktopSource && currentRecords.length) await refreshExtractorPlan({ quiet: true });
+    currentLog.push(`已配置外部工具：${formatExtractorToolLabel(toolId)} -> ${result.name || "已选择"}`);
+    showToast("外部工具路径已保存");
+    render();
+  } catch (error) {
+    currentLog.push(`配置外部工具失败：${toolId} - ${error.message}`);
+    showToast(error.message || "配置外部工具失败");
+    render();
+  }
+}
+
+async function clearExtractorTool(toolId) {
+  if (!desktopBridge?.clearExtractorTool) {
+    showToast("只有桌面版可以清除外部工具路径");
+    return;
+  }
+  try {
+    const result = await desktopBridge.clearExtractorTool(toolId);
+    extractorStatus = result.status || await desktopBridge.getExtractorStatus?.();
+    if (desktopSource && currentRecords.length) await refreshExtractorPlan({ quiet: true });
+    currentLog.push(`已清除外部工具手动路径：${formatExtractorToolLabel(toolId)}`);
+    showToast("外部工具路径已清除");
+    render();
+  } catch (error) {
+    currentLog.push(`清除外部工具失败：${toolId} - ${error.message}`);
+    showToast(error.message || "清除外部工具失败");
+    render();
+  }
+}
+
 function renderCategoryOptions() {
   const savedCategoryIds = loadCategorySelection();
   categoryOptions.innerHTML = CATEGORY_DEFS.map(
@@ -1101,6 +1273,8 @@ async function pickSource() {
     currentRecords = [];
     lastOrganizeRun = null;
     lastPluginRun = null;
+    lastExtractionRun = null;
+    extractionPlan = null;
     currentLog = [`已选择桌面源目录：${picked.name}`];
     setProgress("已选择游戏文件夹", "点击扫描素材查看可整理内容。", 10, "neutral");
     updateActionState();
@@ -1118,6 +1292,8 @@ async function pickSource() {
   currentRecords = [];
   lastOrganizeRun = null;
   lastPluginRun = null;
+  lastExtractionRun = null;
+  extractionPlan = null;
   currentLog = [`已选择源目录：${sourceHandle.name}`];
   setProgress("已选择游戏文件夹", "点击扫描素材查看可整理内容。", 10, "neutral");
   updateActionState();
@@ -1133,6 +1309,7 @@ async function pickOutput() {
     outputName.textContent = picked.name;
     lastOrganizeRun = null;
     lastPluginRun = null;
+    lastExtractionRun = null;
     currentLog.push(`已选择桌面输出目录：${picked.name}`);
     updateActionState();
     render();
@@ -1147,6 +1324,7 @@ async function pickOutput() {
   outputName.textContent = outputHandle.name;
   lastOrganizeRun = null;
   lastPluginRun = null;
+  lastExtractionRun = null;
   currentLog.push(`已选择输出目录：${outputHandle.name}`);
   updateActionState();
   render();
@@ -1158,6 +1336,8 @@ async function scanSourceDirectory() {
   currentRecords = [];
   lastOrganizeRun = null;
   lastPluginRun = null;
+  lastExtractionRun = null;
+  extractionPlan = null;
   currentLog = [`开始扫描：${sourceHandle?.name || desktopSource?.name}`];
   setStatus("Scanning", "scanning");
   setProgress("扫描中", "正在读取文件名和大小。", 5, "active");
@@ -1186,6 +1366,10 @@ async function scanSourceDirectory() {
       });
     }
     currentRecords = records;
+    if (desktopSource) {
+      setProgress("规划提取路线", "正在识别封包类型和本机工具。", 94, "active");
+      await refreshExtractorPlan();
+    }
     currentLog.push(`扫描完成：${formatNumber(records.length)} 个文件。`);
     setProgress("扫描完成", summarizeRecords(records), 100, "success");
     setStatus("Scanned", "ready");
@@ -1233,7 +1417,7 @@ async function organizeAssets() {
     [
       `将复制 ${formatNumber(selected.length)} 个开放素材，约 ${formatBytes(totalSize)}。`,
       `输出目录：${outputHandle?.name || desktopOutput?.name}`,
-      archiveTotal ? `发现 ${formatNumber(archiveTotal)} 个资源封包，只写入清单，不拆包。` : "未发现需要提示的资源封包。",
+      archiveTotal ? `发现 ${formatNumber(archiveTotal)} 个资源封包；本次整理只复制开放素材，封包可在封包页另行处理。` : "未发现需要提示的资源封包。",
       "确认开始整理？",
     ].join("\n"),
   );
@@ -1321,6 +1505,122 @@ async function organizeAssets() {
     setStatus("Error", "blocked");
   } finally {
     setBusy(false);
+    render();
+  }
+}
+
+async function runCommonArchiveExtraction() {
+  if (!desktopBridge?.extractCommonArchives || !desktopSource) {
+    showToast("通用解包需要使用桌面版并选择真实源目录");
+    return;
+  }
+  if (!desktopOutput) {
+    showToast("请先选择输出文件夹");
+    return;
+  }
+  if (!currentRecords.length) await scanSourceDirectory();
+  const commonArchives = getCommonArchiveRecords().slice(0, MAX_COMMON_ARCHIVE_RUN);
+  if (!commonArchives.length) {
+    showToast("没有可由通用工具处理的普通压缩包");
+    return;
+  }
+  if (!extractionPlan) await refreshExtractorPlan({ quiet: true });
+  if (!extractionPlan?.summary?.ready) {
+    showToast("没有找到可用的普通压缩包解包工具");
+    return;
+  }
+
+  const totalSize = commonArchives.reduce((sum, record) => sum + record.size, 0);
+  const ok = window.confirm(
+    [
+      `将解开 ${formatNumber(commonArchives.length)} 个普通压缩包，约 ${formatBytes(totalSize)}。`,
+      `输出目录：${desktopOutput.name}`,
+      "只处理 zip、rar、7z、tar 等普通外层压缩包。",
+      "不会处理 xp3、pck、dat、pak 等引擎封包，不做解密、破解或 DRM 绕过。",
+      "确认开始？",
+    ].join("\n"),
+  );
+  if (!ok) return;
+
+  setBusy(true);
+  setStatus("Extracting", "scanning");
+  setProgress("通用解包中", "正在调用本机工具处理普通压缩包。", 5, "active");
+  currentLog.push(`开始通用解包：${formatNumber(commonArchives.length)} 个普通压缩包。`);
+  lastExtractionRun = null;
+
+  const resultRootName = `GalAssetBox_通用解包结果_${nowStamp()}`;
+  try {
+    const result = await desktopBridge.extractCommonArchives({
+      sourceRootPath: desktopSource.path,
+      outputRootPath: desktopOutput.path,
+      resultRootName,
+      records: commonArchives.map((record) => ({
+        relativePath: record.path,
+        ext: record.ext,
+        size: record.size,
+      })),
+    });
+    const rows = result.rows || [];
+    for (const row of rows) {
+      if (row.status === "failed") currentLog.push(`通用解包失败：${row.sourcePath} - ${row.message}`);
+    }
+    lastExtractionRun = {
+      resultRootName,
+      desktopResultPath: result.resultPath || joinDesktopPath(desktopOutput.path, resultRootName),
+      desktopExtractedPath: joinDesktopPath(result.resultPath || joinDesktopPath(desktopOutput.path, resultRootName), "10_通用解包输出"),
+      outputFolderName: desktopOutput.name,
+      tool: result.tool || "",
+      rows,
+      extracted: result.extracted || 0,
+      failed: result.failed || 0,
+      omitted: result.omitted || 0,
+      finishedAt: new Date().toISOString(),
+    };
+    currentLog.push(`通用解包完成：成功 ${formatNumber(lastExtractionRun.extracted)} 个，失败 ${formatNumber(lastExtractionRun.failed)} 个。`);
+    setProgress("通用解包完成", `结果已写入 ${resultRootName}，可一键扫描解包输出。`, 100, lastExtractionRun.failed ? "warn" : "success");
+    setStatus(lastExtractionRun.failed ? "Partial" : "Extracted", lastExtractionRun.failed ? "warn" : "ready");
+    showToast("通用解包完成");
+  } catch (error) {
+    currentLog.push(`通用解包失败：${error.message}`);
+    setProgress("通用解包失败", error.message, 100, "danger");
+    setStatus("Error", "blocked");
+  } finally {
+    setBusy(false);
+    render();
+  }
+}
+
+async function useExtractionResultAsSource(targetPath) {
+  if (!desktopBridge?.useDirectoryAsSource) {
+    showToast("一键扫描解包结果需要使用桌面版");
+    return;
+  }
+  if (!targetPath) {
+    showToast("没有可扫描的解包输出目录");
+    return;
+  }
+
+  try {
+    const picked = await desktopBridge.useDirectoryAsSource(targetPath);
+    desktopSource = picked;
+    sourceHandle = null;
+    sourceName.textContent = picked.name;
+    projectTitle.textContent = picked.name;
+    currentRecords = [];
+    lastOrganizeRun = null;
+    lastPluginRun = null;
+    lastExtractionRun = null;
+    extractionPlan = null;
+    currentLog = [`已切换到解包输出目录：${picked.name}`];
+    setProgress("已切换源目录", "正在扫描解包后的素材。", 15, "active");
+    updateActionState();
+    render();
+    await scanSourceDirectory();
+  } catch (error) {
+    currentLog.push(`切换解包输出失败：${error.message}`);
+    setProgress("切换失败", error.message, 100, "danger");
+    setStatus("Error", "blocked");
+    showToast("无法扫描解包结果");
     render();
   }
 }
@@ -1786,7 +2086,7 @@ function buildPluginRunMarkdown(resultRootName, runRows) {
   lines.push("# GalAssetBox 授权插件报告");
   lines.push("");
   lines.push(`- 生成时间：${new Date().toLocaleString("zh-CN")}`);
-  lines.push(`- 源目录：${sourceHandle?.name || "unknown"}`);
+  lines.push(`- 源目录：${sourceHandle?.name || desktopSource?.name || "unknown"}`);
   lines.push(`- 结果目录：${resultRootName}`);
   lines.push(`- 写入文件：${formatNumber(written)} 个`);
   lines.push(`- 失败匹配项：${formatNumber(failed)} 个`);
@@ -1836,7 +2136,7 @@ function buildDiagnosticPackage() {
       containsFileContents: false,
       containsAbsolutePaths: false,
       pathType: "browser relative paths only",
-      note: "This diagnostic package contains metadata, logs, plugin state, and relative file manifest entries only.",
+      note: "This diagnostic package contains metadata, sanitized logs, plugin state, extractor state, and relative file manifest entries only.",
     },
     workspace: {
       sourceName: sourceHandle?.name || sourceName.textContent || "",
@@ -1884,6 +2184,31 @@ function buildDiagnosticPackage() {
       note: match.result.note || "",
       record: recordForDiagnostic(match.record),
     })),
+    extractorGateway: {
+      available: Boolean(desktopBridge),
+      tools: Object.values(extractorStatus?.tools || {}).map((tool) => ({
+        id: tool.id,
+        label: tool.label,
+        available: tool.available,
+        configured: tool.configured,
+        source: tool.source,
+        commandName: tool.commandName,
+        roles: tool.roles,
+        installHint: tool.installHint,
+      })),
+      planSummary: extractionPlan?.summary || null,
+      routes: (extractionPlan?.routes || []).slice(0, 200).map((route) => ({
+        path: route.path,
+        ext: route.ext,
+        size: route.size,
+        route: route.route,
+        label: route.label,
+        status: route.status,
+        tool: route.tool,
+        note: route.note,
+        signature: route.signature,
+      })),
+    },
     manifest: currentRecords.map(recordForDiagnostic),
     lastOrganizeRun: lastOrganizeRun
       ? {
@@ -1899,6 +2224,19 @@ function buildDiagnosticPackage() {
           finishedAt: lastOrganizeRun.finishedAt,
         }
       : null,
+    lastExtractionRun: lastExtractionRun
+      ? {
+          resultRootName: lastExtractionRun.resultRootName,
+          outputFolderName: lastExtractionRun.outputFolderName,
+          desktopExtractedPath: lastExtractionRun.desktopExtractedPath ? "[local-path]" : "",
+          tool: lastExtractionRun.tool,
+          extracted: lastExtractionRun.extracted,
+          failed: lastExtractionRun.failed,
+          omitted: lastExtractionRun.omitted || 0,
+          finishedAt: lastExtractionRun.finishedAt,
+          rows: sanitizeDiagnosticRows(lastExtractionRun.rows),
+        }
+      : null,
     lastPluginRun: lastPluginRun
       ? {
           resultRootName: lastPluginRun.resultRootName,
@@ -1909,10 +2247,10 @@ function buildDiagnosticPackage() {
           failed: lastPluginRun.failed,
           totalMatches: lastPluginRun.totalMatches,
           finishedAt: lastPluginRun.finishedAt,
-          rows: lastPluginRun.rows,
+          rows: sanitizeDiagnosticRows(lastPluginRun.rows),
         }
       : null,
-    log: currentLog.slice(-500),
+    log: currentLog.slice(-500).map(sanitizeDiagnosticText),
   };
 }
 
@@ -1968,7 +2306,7 @@ function buildHelpSummaryMarkdown() {
   lines.push(`- 生成时间：${new Date().toLocaleString("zh-CN")}`);
   lines.push(`- 运行环境：${desktopBridge ? "桌面版 Electron" : "浏览器版"}`);
   lines.push("- 隐私说明：本摘要不包含素材内容、绝对本机路径、密钥或授权材料。");
-  lines.push("- 边界说明：封包只记录清单，不拆包、不解密、不绕过 DRM。");
+  lines.push("- 边界说明：普通压缩包可走本机工具；引擎封包需要外部工具或授权适配器；不解密、不绕过 DRM。");
   lines.push("");
   lines.push("## 扫描概况");
   lines.push(`- 扫描文件：${formatNumber(currentRecords.length)} 个，合计 ${formatBytes(totalSize)}`);
@@ -1989,6 +2327,25 @@ function buildHelpSummaryMarkdown() {
     }
   } else {
     lines.push("- 未发现常见资源封包。");
+  }
+  lines.push("");
+  lines.push("## 提取路线");
+  if (extractionPlan?.summary) {
+    lines.push(`- 已规划：${formatNumber(extractionPlan.summary.total || 0)} 个`);
+    lines.push(`- 可通用解包：${formatNumber(extractionPlan.summary.ready || 0)} 个`);
+    lines.push(`- 外部工具可接：${formatNumber(extractionPlan.summary.externalReady || 0)} 个`);
+    lines.push(`- 缺少工具：${formatNumber(extractionPlan.summary.toolMissing || 0)} 个`);
+    lines.push(`- 需要授权适配器：${formatNumber(extractionPlan.summary.adapterNeeded || 0)} 个`);
+    const toolRows = getExtractorToolsForConfig();
+    if (toolRows.length) {
+      lines.push("");
+      lines.push("### 工具状态");
+      for (const tool of toolRows) {
+        lines.push(`- ${tool.label}: ${tool.available ? "可用" : "不可用"}，${formatExtractorSource(tool.source)}${tool.commandName ? `，${tool.commandName}` : ""}`);
+      }
+    }
+  } else {
+    lines.push("- 尚未生成桌面端提取路线。");
   }
   lines.push("");
   lines.push("## 分类规则");
@@ -2025,6 +2382,17 @@ function buildHelpSummaryMarkdown() {
     lines.push("- 尚未完成整理。");
   }
   lines.push("");
+  lines.push("## 最近通用解包");
+  if (lastExtractionRun) {
+    lines.push(`- 结果目录：${lastExtractionRun.resultRootName}`);
+    lines.push(`- 成功压缩包：${formatNumber(lastExtractionRun.extracted)} 个`);
+    lines.push(`- 失败：${formatNumber(lastExtractionRun.failed)} 个`);
+    lines.push(`- 未处理：${formatNumber(lastExtractionRun.omitted || 0)} 个`);
+    lines.push(`- 工具：${lastExtractionRun.tool}`);
+  } else {
+    lines.push("- 尚未运行通用解包。");
+  }
+  lines.push("");
   lines.push("## 最近插件运行");
   if (lastPluginRun) {
     lines.push(`- 结果目录：${lastPluginRun.resultRootName}`);
@@ -2036,11 +2404,11 @@ function buildHelpSummaryMarkdown() {
   lines.push("");
   lines.push("## 需要别人帮忙看时可以先说");
   if (!selected.length && archives.length) {
-    lines.push("- 这个文件夹主要像是封包资源，当前版本只做提示和清单，不会拆包。");
+    lines.push("- 这个文件夹主要像是封包资源，可以先看封包页的提取路线；普通压缩包和引擎封包要分开处理。");
   } else if (!selected.length) {
     lines.push("- 没有识别到可复制的开放素材，可能需要检查文件类型或分类规则。");
   } else if (archives.length) {
-    lines.push("- 开放素材可以整理，但还有封包提示，封包不会被提取。");
+    lines.push("- 开放素材可以整理，但还有封包提示；需要看封包页决定通用解包、外部工具或授权适配器。");
   } else {
     lines.push("- 扫描结果里有开放素材，可以先按当前分类整理。");
   }
@@ -2067,11 +2435,32 @@ function downloadHelpSummary() {
 }
 
 function sanitizeHelpText(text) {
+  return sanitizeDiagnosticText(text).slice(0, 220);
+}
+
+function sanitizeDiagnosticText(text) {
   return String(text || "")
-    .replace(/[A-Za-z]:[\\/][^\s]+/g, "[local-path]")
-    .replace(/\/Users\/[^\s]+/g, "[local-path]")
-    .replace(/\/home\/[^\s]+/g, "[local-path]")
-    .slice(0, 220);
+    .replace(/[A-Za-z]:[\\/](Users|Documents and Settings)[\\/][^\s"'<>|]+/g, "[local-path]")
+    .replace(/\/Users\/[^\s"'<>|]+/g, "[local-path]")
+    .replace(/\/home\/[^\s"'<>|]+/g, "[local-path]");
+}
+
+function sanitizeDiagnosticRows(rows = []) {
+  return rows.map((row) => {
+    const nextRow = {};
+    for (const [key, value] of Object.entries(row || {})) {
+      if (Array.isArray(value)) {
+        nextRow[key] = value.map((item) => (
+          item && typeof item === "object" ? sanitizeDiagnosticRows([item])[0] : sanitizeDiagnosticText(item)
+        ));
+      } else if (typeof value === "string") {
+        nextRow[key] = sanitizeDiagnosticText(value);
+      } else {
+        nextRow[key] = value;
+      }
+    }
+    return nextRow;
+  });
 }
 
 function getSelectedCopyRecords() {
@@ -2105,7 +2494,8 @@ async function ensureDirectory(rootHandle, parts) {
 
 function safeSegment(value) {
   return String(value || "item")
-    .replace(/[<>:"\\|?*\x00-\x1F]/g, "_")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .replace(/\.\.+/g, "_")
     .replace(/\s+$/g, "")
     .slice(0, 120) || "item";
 }
@@ -2131,7 +2521,7 @@ function buildMarkdownReport(copiedRecords, resultRootName) {
   lines.push("# GalAssetBox 整理报告");
   lines.push("");
   lines.push(`- 生成时间：${new Date().toLocaleString("zh-CN")}`);
-  lines.push(`- 源目录：${sourceHandle?.name || "manifest-only"}`);
+  lines.push(`- 源目录：${sourceHandle?.name || desktopSource?.name || "manifest-only"}`);
   lines.push(`- 结果目录：${resultRootName}`);
   lines.push(`- 已复制开放素材：${formatNumber(copiedRecords.length)} 个`);
   lines.push(`- 已扫描文件：${formatNumber(currentRecords.length)} 个`);
@@ -2257,8 +2647,8 @@ function renderEmpty() {
   );
   archivesPanel.innerHTML = renderPanelEmptyState(
     "扫描后显示封包提示",
-    "发现常见资源封包时会列在这里。只写清单，不拆包。",
-    ["只列清单", "不拆包", "授权插件"],
+    "发现常见资源封包时会列在这里。桌面版会规划本机工具、外部工具或授权适配器路线。",
+    ["路线规划", "通用解包", "授权适配"],
   );
   authorizedPluginsPanel.innerHTML = renderAuthorizedPlugins();
   logPanel.innerHTML = currentLog.length
@@ -2299,7 +2689,8 @@ function renderOverview(selected, archives) {
     ${renderPreflightSummary(selected, archives)}
     <div class="result-action-row">
       <button id="downloadHelpSummaryInlineButton" type="button">导出求助摘要</button>
-      <span>适合发给群友排查，不包含素材内容或绝对本机路径。</span>
+      <button id="downloadDiagnosticOverviewButton" type="button">导出诊断包</button>
+      <span>求助摘要适合发群友；诊断包适合给开发者排查，不包含素材内容或绝对本机路径。</span>
     </div>
     <div class="card-list">
       <article class="summary-card">
@@ -2307,8 +2698,8 @@ function renderOverview(selected, archives) {
         <p>${formatNumber(selected.length)} 个文件，约 ${formatBytes(selected.reduce((sum, record) => sum + record.size, 0))}</p>
       </article>
       <article class="summary-card">
-        <h4>不会拆包的文件</h4>
-        <p>${formatNumber(archives.length)} 个封包会写入清单，保留给用户确认来源和授权。</p>
+        <h4>封包路线</h4>
+        <p>${formatNumber(archives.length)} 个封包会写入清单；桌面版会规划通用解包、外部工具或授权适配器路线。</p>
       </article>
       <article class="summary-card">
         <h4>授权插件匹配</h4>
@@ -2354,7 +2745,7 @@ function renderPreflightSummary(selected, archives) {
   if (archives.length) {
     if (tone !== "blocked") tone = "warn";
     if (state === "可以整理") state = "有封包提示";
-    messages.push(`发现 ${formatNumber(archives.length)} 个资源封包，只写入清单，不拆包、不解密。`);
+    messages.push(`发现 ${formatNumber(archives.length)} 个资源封包；普通压缩包可走通用解包，引擎封包仍需授权适配，不做解密或 DRM 绕过。`);
   }
   if (missingEnabled.length) {
     messages.push(`已勾选但未找到：${missingEnabled.slice(0, 5).join("、")}${missingEnabled.length > 5 ? "等" : ""}。`);
@@ -2498,18 +2889,154 @@ function renderCategoryCard(definition) {
 }
 
 function renderArchives(archives) {
+  const routeRows = archives.slice(0, 80).map((record) => {
+    const plan = getExtractionPlanItem(record);
+    const statusTone = getExtractionStatusTone(plan?.status);
+    return `
+      <article class="archive-route-row">
+        <div>
+          <strong>${escapeHtml(record.path)}</strong>
+          <p>${escapeHtml(plan?.note || record.category.reason)} · ${formatBytes(record.size)}</p>
+        </div>
+        <div class="archive-route-meta">
+          <span class="plugin-badge ${statusTone}">${escapeHtml(plan?.label || "待规划")}</span>
+          <span>${escapeHtml(formatExtractionStatusLabel(plan?.status))}</span>
+          <code>${escapeHtml(plan?.tool || record.ext || "unknown")}</code>
+        </div>
+      </article>
+    `;
+  }).join("");
+
   return `
     <div class="section-title">
       <h3>封包提示</h3>
-      <span>${formatNumber(archives.length)} 只写清单</span>
+      <span>${formatNumber(archives.length)} 个候选</span>
     </div>
+    ${renderExtractorGatewaySummary(archives)}
+    ${renderExtractionRunPreview(lastExtractionRun)}
     <article class="notice-card">
-      <h4>识别但不拆包</h4>
-      <p>这些通常是引擎资源包或受保护资源。GalAssetBox 只记录路径和大小，不提供解密、破解或绕过 DRM 的步骤。</p>
+      <h4>路线不是万能钥匙</h4>
+      <p>普通压缩包可以交给本机工具；引擎封包会进入 GARbro、Game Extractor、Unity、音频解码或授权适配器路线。受保护内容仍不做解密、破解或绕过 DRM。</p>
     </article>
-    <div class="sample-list archive-list">
-      ${archives.slice(0, 80).map((record) => `<code>${escapeHtml(record.path)} · ${formatBytes(record.size)}</code>`).join("") || "<p>没有发现常见资源封包。</p>"}
+    <div class="archive-route-list">
+      ${routeRows || "<p>没有发现常见资源封包。</p>"}
     </div>
+  `;
+}
+
+function renderExtractorGatewaySummary(archives) {
+  const summary = extractionPlan?.summary || {};
+  const tools = getAvailableExtractorTools();
+  const toolConfigRows = getExtractorToolsForConfig().map((tool) => {
+    const tone = getExtractorToolTone(tool);
+    const status = tool.available ? "可用" : tool.configured ? "路径失效" : "未找到";
+    const roleText = (tool.roles || []).join(" / ");
+    return `
+      <article class="extractor-tool-row">
+        <div>
+          <h5>${escapeHtml(tool.label)}</h5>
+          <p>${escapeHtml(tool.installHint || roleText)}</p>
+        </div>
+        <div class="extractor-tool-meta">
+          <span class="plugin-badge ${tone}">${escapeHtml(status)}</span>
+          <span>${escapeHtml(formatExtractorSource(tool.source))}</span>
+          <code>${escapeHtml(tool.commandName || roleText || tool.id)}</code>
+        </div>
+        <div class="extractor-tool-actions">
+          <button type="button" data-config-extractor-tool="${escapeHtml(tool.id)}" ${desktopBridge ? "" : "disabled"}>选择路径</button>
+          <button type="button" data-clear-extractor-tool="${escapeHtml(tool.id)}" ${desktopBridge && tool.configured ? "" : "disabled"}>清除</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+  const commonArchives = getCommonArchiveRecords();
+  const canExtractCommon = Boolean(desktopBridge && desktopSource && desktopOutput && commonArchives.length && summary.ready);
+  const commonActionReason = getCommonArchiveActionReason(commonArchives.length);
+  const statusText = desktopBridge
+    ? extractionPlan
+      ? `已规划 ${formatNumber(summary.total || 0)} 个封包`
+      : archives.length
+        ? "扫描后会自动规划"
+        : "等待封包"
+    : "仅桌面版可调用本机工具";
+
+  return `
+    <article class="extractor-card">
+      <div>
+        <h4>本地提取调度层</h4>
+        <p>${escapeHtml(statusText)}。通用解包只处理 zip、rar、7z、tar 等普通外层压缩包。</p>
+      </div>
+      <div class="extractor-summary-grid">
+        <span>通用可解 ${formatNumber(summary.ready || 0)}</span>
+        <span>工具已检 ${formatNumber(summary.externalReady || 0)}</span>
+        <span>缺工具 ${formatNumber(summary.toolMissing || 0)}</span>
+        <span>需适配 ${formatNumber(summary.adapterNeeded || 0)}</span>
+      </div>
+      <div class="route-legend" aria-label="封包路线图例">
+        <span><strong>通用可解</strong> zip / rar / 7z / tar，可由本机工具解到独立目录。</span>
+        <span><strong>工具已检</strong> 已找到外部工具，但自动执行器还未接入。</span>
+        <span><strong>需适配</strong> 当前不会自动提取，需要授权适配器或人工确认路线。</span>
+      </div>
+      <div class="policy-list">
+        ${
+          tools.length
+            ? tools.slice(0, 8).map((tool) => `<span>${escapeHtml(tool.label)}</span>`).join("")
+            : "<span>未发现可用外部工具</span>"
+        }
+      </div>
+      <div class="section-title compact-title">
+        <h3>工具配置</h3>
+        <span>${desktopBridge ? "本机路径" : "桌面版可配置"}</span>
+      </div>
+      <div class="extractor-tool-list">
+        ${toolConfigRows || "<p>扫描后会显示外部工具检测结果。</p>"}
+      </div>
+      <div class="result-action-row">
+        <button id="extractCommonArchivesInlineButton" type="button" ${canExtractCommon ? "" : "disabled"}>运行通用解包</button>
+        <span>${formatNumber(commonArchives.length)} 个普通压缩包候选；${escapeHtml(commonActionReason)}</span>
+      </div>
+    </article>
+  `;
+}
+
+function renderExtractionRunPreview(run) {
+  if (!run) return "";
+  const failedRows = run.rows.filter((row) => row.status === "failed");
+  const sampleRows = run.rows.slice(0, 8);
+  return `
+    <article class="output-preview">
+      <div>
+        <h4>最近通用解包结果</h4>
+        <p>${escapeHtml(run.resultRootName)} 已写入你选择的输出文件夹。解出的内容还需要再次扫描，才能按 CG、音乐、视频等类别整理。</p>
+      </div>
+      <div class="output-summary-grid">
+        <span>成功 ${formatNumber(run.extracted)} 个压缩包</span>
+        <span>失败 ${formatNumber(run.failed)} 个</span>
+        <span>未处理 ${formatNumber(run.omitted || 0)} 个</span>
+        <span>工具 ${escapeHtml(run.tool)}</span>
+      </div>
+      <div class="output-paths">
+        <code>${escapeHtml(`${run.resultRootName}/GalAssetBox_通用解包报告.md`)}</code>
+        <code>${escapeHtml(`${run.resultRootName}/GalAssetBox_通用解包清单.csv`)}</code>
+        <code>${escapeHtml(`${run.resultRootName}/10_通用解包输出/`)}</code>
+      </div>
+      ${
+        run.desktopResultPath
+          ? `<div class="result-action-row">
+              <button type="button" data-use-extraction-source="${escapeHtml(run.desktopExtractedPath || run.desktopResultPath)}">扫描解包输出</button>
+              <button type="button" data-open-desktop-path="${escapeHtml(run.desktopResultPath)}">打开解包结果</button>
+            </div>`
+          : ""
+      }
+      <div class="output-row-list">
+        ${sampleRows.map((row) => `<code>${escapeHtml(`${row.status} | ${row.sourcePath} -> ${row.outputPath}`)}</code>`).join("")}
+      </div>
+      ${
+        failedRows.length
+          ? `<div class="output-error-list">${failedRows.slice(0, 5).map((row) => `<p>${escapeHtml(`${row.sourcePath}: ${row.message}`)}</p>`).join("")}</div>`
+          : ""
+      }
+    </article>
   `;
 }
 
@@ -3016,6 +3543,8 @@ function loadManifestFiles(files) {
   desktopOutput = null;
   lastOrganizeRun = null;
   lastPluginRun = null;
+  lastExtractionRun = null;
+  extractionPlan = null;
   sourceName.textContent = "清单模式";
   outputName.textContent = "未选择";
   projectTitle.textContent = "清单模式";
@@ -3045,6 +3574,10 @@ scanButton.addEventListener("click", () => {
 
 organizeButton.addEventListener("click", () => {
   void organizeAssets();
+});
+
+extractCommonArchivesButton.addEventListener("click", () => {
+  void runCommonArchiveExtraction();
 });
 
 runPluginsButton.addEventListener("click", () => {
@@ -3093,6 +3626,8 @@ sampleButton.addEventListener("click", () => {
   desktopOutput = null;
   lastOrganizeRun = null;
   lastPluginRun = null;
+  lastExtractionRun = null;
+  extractionPlan = null;
   sourceName.textContent = "样例";
   outputName.textContent = "未选择";
   projectTitle.textContent = "样例预览";
@@ -3124,6 +3659,10 @@ overviewPanel.addEventListener("click", (event) => {
     downloadHelpSummary();
     return;
   }
+  if (event.target.id === "downloadDiagnosticOverviewButton") {
+    downloadDiagnosticPackage();
+    return;
+  }
   const openButton = event.target.closest("[data-open-desktop-path]");
   if (openButton instanceof HTMLElement) {
     void openDesktopPath(openButton.dataset.openDesktopPath || "");
@@ -3151,6 +3690,33 @@ categoriesPanel.addEventListener("keydown", (event) => {
   const categorySelect = document.querySelector("#ruleCategorySelect");
   if (!(categorySelect instanceof HTMLSelectElement)) return;
   addCustomCategoryRule(event.target.value, categorySelect.value);
+});
+
+archivesPanel.addEventListener("click", (event) => {
+  if (!(event.target instanceof HTMLElement)) return;
+  const configButton = event.target.closest("[data-config-extractor-tool]");
+  if (configButton instanceof HTMLElement) {
+    void configureExtractorTool(configButton.dataset.configExtractorTool || "");
+    return;
+  }
+  const clearButton = event.target.closest("[data-clear-extractor-tool]");
+  if (clearButton instanceof HTMLElement) {
+    void clearExtractorTool(clearButton.dataset.clearExtractorTool || "");
+    return;
+  }
+  if (event.target.id === "extractCommonArchivesInlineButton") {
+    void runCommonArchiveExtraction();
+    return;
+  }
+  const useExtractionButton = event.target.closest("[data-use-extraction-source]");
+  if (useExtractionButton instanceof HTMLElement) {
+    void useExtractionResultAsSource(useExtractionButton.dataset.useExtractionSource || "");
+    return;
+  }
+  const openButton = event.target.closest("[data-open-desktop-path]");
+  if (openButton instanceof HTMLElement) {
+    void openDesktopPath(openButton.dataset.openDesktopPath || "");
+  }
 });
 
 function activateTab(tab, shouldFocus = false) {

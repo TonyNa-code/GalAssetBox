@@ -42,7 +42,9 @@ const requiredFiles = [
   "src/styles.css",
   "electron/main.js",
   "electron/preload.js",
+  "electron/extractor-gateway.js",
   "docs/SAFETY.md",
+  "docs/EXTRACTOR_GATEWAY.md",
   "docs/PLUGIN_API.md",
   "docs/WINDOWS.md",
   "docs/小白版使用说明.md",
@@ -52,6 +54,7 @@ const requiredFiles = [
   "package.json",
   "package-lock.json",
   "scripts/release-check.js",
+  "scripts/gateway-check.js",
 ];
 
 const checks = [];
@@ -128,6 +131,7 @@ function checkPackageScripts() {
 function checkElectronSafety() {
   const main = readText("electron/main.js");
   const preload = readText("electron/preload.js");
+  const gateway = readText("electron/extractor-gateway.js");
   const requiredSnippets = [
     ["contextIsolation: true", main],
     ["nodeIntegration: false", main],
@@ -137,6 +141,19 @@ function checkElectronSafety() {
     ["selectedOutputRoots", main],
     ["contextBridge.exposeInMainWorld", preload],
     ["GalAssetBoxDesktop", preload],
+    ["desktop:plan-extraction", main],
+    ["desktop:extract-common-archives", main],
+    ["desktop:use-directory-as-source", main],
+    ["desktop:pick-extractor-tool", main],
+    ["resolveOutputRoot", main],
+    ["assertInsideRoot", main],
+    ["planExtraction(payload)", preload],
+    ["extractCommonArchives(payload)", preload],
+    ["useDirectoryAsSource(targetPath)", preload],
+    ["pickExtractorTool(toolId)", preload],
+    ["extractCommonArchives", gateway],
+    ["sanitizeRuntimeText", gateway],
+    ["getCommonArchiveTools", gateway],
   ];
   const missing = requiredSnippets.filter(([snippet, text]) => !text.includes(snippet)).map(([snippet]) => snippet);
   if (missing.length) fail("electron safety bridge", `missing ${missing.join(", ")}`);

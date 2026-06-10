@@ -9,6 +9,9 @@ GalAssetBox is an asset organizer, not a cracking or piracy tool.
 - Preserve original relative paths under category folders
 - Generate local Markdown and CSV manifests
 - Identify common resource archives as index-only records
+- Route ordinary archive extraction through local tools such as 7-Zip, bsdtar, or unar after user confirmation
+- Report recommended external-tool or adapter routes for ambiguous engine archives
+- Store user-selected extractor executable paths locally when configured manually
 - Register local authorized plugins for creator-owned, open-source, official-export, or explicitly licensed formats
 
 ## Out of Scope
@@ -33,11 +36,15 @@ The direct organizer uses the browser File System Access API:
 - no network upload
 - no background scan outside selected folders
 
-## Archive Handling
+## Archive and Extractor Handling
 
-Files such as `.xp3`, `.rpa`, `.nsa`, `.pck`, `.dat`, `.pak`, and Unity asset bundles are recorded in the manifest as `index-only`.
+Files such as `.xp3`, `.rpa`, `.nsa`, `.pck`, `.dat`, `.pak`, and Unity asset bundles are recorded in the manifest and routed through the extractor gateway.
 
-They are not copied as extracted resources, decrypted, or unpacked by this MVP.
+Ordinary outer archives such as `.zip`, `.rar`, `.7z`, and `.tar` can be extracted by desktop builds through local tools. Extracted output is written to a separate result folder and can be scanned again.
+
+Engine-specific or protected archives require an authorized adapter or external tool route. 受保护或未授权的引擎封包不拆包、不解密，不会通过 bundled third-party keys 提取。
+
+Manual extractor paths are local configuration only. They are not uploaded, and diagnostic exports should not include the full path.
 
 ## Authorized Plugin Guardrails
 
@@ -70,6 +77,6 @@ Help summary export is also local-only and designed for sharing with helpers. It
 
 ## Desktop Bridge
 
-The Electron desktop bridge only exposes local folder selection, selected-folder scanning, selected-file reads for authorized plugins, writes to the selected output folder, and opening paths inside selected folders.
+The Electron desktop bridge only exposes local folder selection, selected-folder scanning, selected-file reads for authorized plugins, selected ordinary-archive extraction through local tools, writes to the selected output folder, and opening paths inside selected folders.
 
 It does not run game executables, scan unrelated folders in the background, upload files, decrypt protected archives, bundle third-party keys, or bypass DRM.

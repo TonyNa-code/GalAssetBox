@@ -42,6 +42,7 @@ Check:
 
 - `新手模式` hides advanced actions
 - `高级功能` shows plugin, manifest, sample, and help-summary actions
+- `npm run gateway:check` passes before packaging
 - `载入样例` works
 - `整理前预检` appears after sample data loads
 - `分类` page can add and delete a simple classification rule

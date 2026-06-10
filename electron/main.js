@@ -1,9 +1,17 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const fs = require("fs/promises");
 const path = require("path");
+const {
+  extractCommonArchives,
+  getExtractorStatus,
+  getToolDefinitions,
+  isKnownToolId,
+  planExtraction,
+} = require("./extractor-gateway");
 
 const selectedSourceRoots = new Set();
 const selectedOutputRoots = new Set();
+const EXTRACTOR_TOOL_CONFIG_FILE = "extractor-tools.json";
 
 const SKIPPED_DIRS = new Set([
   ".git",
@@ -73,10 +81,24 @@ ipcMain.handle("desktop:scan-directory", async (_event, rootPath) => {
   return { files };
 });
 
+ipcMain.handle("desktop:use-directory-as-source", async (_event, targetPath) => {
+  const allowedRoots = new Set([...selectedSourceRoots, ...selectedOutputRoots]);
+  const selectedPath = assertInsideRegisteredRoot(targetPath, allowedRoots, "源目录");
+  const stat = await fs.stat(selectedPath);
+  if (!stat.isDirectory()) {
+    throw new Error("目标不是文件夹。");
+  }
+  selectedSourceRoots.add(selectedPath);
+  return {
+    path: selectedPath,
+    name: path.basename(selectedPath) || selectedPath,
+  };
+});
+
 ipcMain.handle("desktop:organize-assets", async (_event, payload) => {
   const sourceRoot = assertInsideRegisteredRoot(payload.sourceRootPath, selectedSourceRoots, "源目录");
   const outputRoot = assertInsideRegisteredRoot(payload.outputRootPath, selectedOutputRoots, "输出目录");
-  const resultRoot = path.join(outputRoot, safeSegment(payload.resultRootName));
+  const resultRoot = resolveOutputRoot(outputRoot, payload.resultRootName);
   const rows = [];
   let copied = 0;
   let failed = 0;
@@ -91,6 +113,7 @@ ipcMain.handle("desktop:organize-assets", async (_event, payload) => {
         safeSegment(record.categoryFolder),
         ...splitSafe(record.relativePath),
       );
+      assertInsideRoot(resultRoot, targetPath, "整理输出");
       await fs.mkdir(path.dirname(targetPath), { recursive: true });
       await fs.copyFile(sourcePath, targetPath);
       copied += 1;
@@ -117,7 +140,7 @@ ipcMain.handle("desktop:read-file-array-buffer", async (_event, filePath) => {
 
 ipcMain.handle("desktop:write-plugin-output", async (_event, payload) => {
   const outputRoot = assertInsideRegisteredRoot(payload.outputRootPath, selectedOutputRoots, "输出目录");
-  const resultRoot = path.join(outputRoot, safeSegment(payload.resultRootName));
+  const resultRoot = resolveOutputRoot(outputRoot, payload.resultRootName);
   const output = payload.output || {};
   const targetPath = path.join(
     resultRoot,
@@ -127,6 +150,7 @@ ipcMain.handle("desktop:write-plugin-output", async (_event, payload) => {
     ...splitSafe(payload.sourcePath),
     ...splitSafe(output.path),
   );
+  assertInsideRoot(resultRoot, targetPath, "插件输出");
   await fs.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.writeFile(targetPath, Buffer.from(output.base64 || "", "base64"));
   return path.relative(resultRoot, targetPath).replaceAll(path.sep, "/");
@@ -134,11 +158,66 @@ ipcMain.handle("desktop:write-plugin-output", async (_event, payload) => {
 
 ipcMain.handle("desktop:write-plugin-run-reports", async (_event, payload) => {
   const outputRoot = assertInsideRegisteredRoot(payload.outputRootPath, selectedOutputRoots, "输出目录");
-  const resultRoot = path.join(outputRoot, safeSegment(payload.resultRootName));
+  const resultRoot = resolveOutputRoot(outputRoot, payload.resultRootName);
   await fs.mkdir(resultRoot, { recursive: true });
   await fs.writeFile(path.join(resultRoot, "GalAssetBox_授权插件报告.md"), payload.markdown || "", "utf8");
   await fs.writeFile(path.join(resultRoot, "GalAssetBox_授权插件清单.csv"), payload.csv || "", "utf8");
   return { ok: true, resultPath: resultRoot };
+});
+
+ipcMain.handle("desktop:get-extractor-status", async () => {
+  return getExtractorStatus(await loadExtractorToolOverrides());
+});
+
+ipcMain.handle("desktop:plan-extraction", async (_event, payload) => {
+  const sourceRoot = assertInsideRegisteredRoot(payload.sourceRootPath, selectedSourceRoots, "源目录");
+  return planExtraction(sourceRoot, payload.records || [], {
+    toolOverrides: await loadExtractorToolOverrides(),
+  });
+});
+
+ipcMain.handle("desktop:extract-common-archives", async (_event, payload) => {
+  const sourceRoot = assertInsideRegisteredRoot(payload.sourceRootPath, selectedSourceRoots, "源目录");
+  const outputRoot = assertInsideRegisteredRoot(payload.outputRootPath, selectedOutputRoots, "输出目录");
+  return extractCommonArchives({
+    sourceRoot,
+    outputRoot,
+    resultRootName: safeSegment(payload.resultRootName),
+    records: payload.records || [],
+    toolOverrides: await loadExtractorToolOverrides(),
+  });
+});
+
+ipcMain.handle("desktop:pick-extractor-tool", async (_event, toolId) => {
+  assertKnownToolId(toolId);
+  const tool = getToolDefinitions().find((item) => item.id === toolId);
+  const result = await dialog.showOpenDialog({
+    title: `选择 ${tool?.label || toolId} 可执行文件`,
+    properties: ["openFile"],
+  });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+
+  const selectedPath = path.resolve(result.filePaths[0]);
+  const overrides = await loadExtractorToolOverrides();
+  overrides[toolId] = selectedPath;
+  await saveExtractorToolOverrides(overrides);
+  return {
+    canceled: false,
+    toolId,
+    name: path.basename(selectedPath),
+    status: await getExtractorStatus(overrides),
+  };
+});
+
+ipcMain.handle("desktop:clear-extractor-tool", async (_event, toolId) => {
+  assertKnownToolId(toolId);
+  const overrides = await loadExtractorToolOverrides();
+  delete overrides[toolId];
+  await saveExtractorToolOverrides(overrides);
+  return {
+    ok: true,
+    status: await getExtractorStatus(overrides),
+  };
 });
 
 ipcMain.handle("desktop:open-path", async (_event, targetPath) => {
@@ -183,6 +262,50 @@ function assertInsideRegisteredRoot(targetPath, roots, label) {
   throw new Error(`${label}不在已选择的授权目录内。`);
 }
 
+function resolveOutputRoot(outputRoot, resultRootName) {
+  const resultRoot = path.resolve(outputRoot, safeSegment(resultRootName));
+  assertInsideRoot(outputRoot, resultRoot, "结果目录");
+  return resultRoot;
+}
+
+function assertInsideRoot(root, targetPath, label) {
+  if (!isInsideOrSame(root, targetPath)) {
+    throw new Error(`${label}超出授权输出目录。`);
+  }
+}
+
+function assertKnownToolId(toolId) {
+  if (!isKnownToolId(String(toolId || ""))) {
+    throw new Error("未知的外部工具 ID。");
+  }
+}
+
+async function loadExtractorToolOverrides() {
+  try {
+    const parsed = JSON.parse(await fs.readFile(getExtractorToolConfigPath(), "utf8"));
+    if (!parsed || typeof parsed !== "object") return {};
+    const overrides = {};
+    for (const [toolId, toolPath] of Object.entries(parsed)) {
+      if (isKnownToolId(toolId) && typeof toolPath === "string" && toolPath.trim()) {
+        overrides[toolId] = toolPath;
+      }
+    }
+    return overrides;
+  } catch {
+    return {};
+  }
+}
+
+async function saveExtractorToolOverrides(overrides) {
+  const configPath = getExtractorToolConfigPath();
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(configPath, JSON.stringify(overrides, null, 2), "utf8");
+}
+
+function getExtractorToolConfigPath() {
+  return path.join(app.getPath("userData"), EXTRACTOR_TOOL_CONFIG_FILE);
+}
+
 function isInsideOrSame(root, targetPath) {
   const normalizedRoot = path.resolve(root);
   const normalizedTarget = path.resolve(targetPath);
@@ -204,7 +327,8 @@ function splitSafe(relativePath) {
 
 function safeSegment(value) {
   return String(value || "item")
-    .replace(/[<>:"\\|?*\x00-\x1F]/g, "_")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .replace(/\.\.+/g, "_")
     .replace(/\s+$/g, "")
     .slice(0, 120) || "item";
 }

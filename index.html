@@ -110,6 +110,7 @@
               aria-label="高级操作"
               aria-describedby="actionHint"
             >
+              <button id="extractCommonArchivesButton" type="button">运行通用解包</button>
               <button id="runPluginsButton" type="button">运行授权插件</button>
               <button id="importPluginButton" type="button">导入本地插件</button>
               <button id="importPluginPackageButton" type="button">导入插件包</button>
@@ -239,18 +240,126 @@
           </section>
 
           <nav class="tabs" aria-label="结果视图" role="tablist" aria-orientation="horizontal">
-            <button class="tab active" id="tab-overview" data-tab="overview" type="button" role="tab" aria-controls="overviewPanel" aria-selected="true">总览</button>
-            <button class="tab" id="tab-categories" data-tab="categories" type="button" role="tab" aria-controls="categoriesPanel" aria-selected="false" tabindex="-1">分类</button>
-            <button class="tab" id="tab-archives" data-tab="archives" type="button" role="tab" aria-controls="archivesPanel" aria-selected="false" tabindex="-1">封包</button>
-            <button class="tab" id="tab-authorizedPlugins" data-tab="authorizedPlugins" type="button" role="tab" aria-controls="authorizedPluginsPanel" aria-selected="false" tabindex="-1">插件</button>
-            <button class="tab" id="tab-log" data-tab="log" type="button" role="tab" aria-controls="logPanel" aria-selected="false" tabindex="-1">日志</button>
+            <button
+              class="tab active"
+              id="tab-overview"
+              data-tab="overview"
+              type="button"
+              role="tab"
+              aria-controls="overviewPanel"
+              aria-selected="true"
+              aria-label="总览：等待扫描结果，当前选中"
+              title="总览：等待扫描结果，当前选中"
+            >
+              总览
+            </button>
+            <button
+              class="tab"
+              id="tab-categories"
+              data-tab="categories"
+              type="button"
+              role="tab"
+              aria-controls="categoriesPanel"
+              aria-selected="false"
+              aria-label="分类：等待扫描分类，未选中"
+              title="分类：等待扫描分类，未选中"
+              tabindex="-1"
+            >
+              分类
+            </button>
+            <button
+              class="tab"
+              id="tab-archives"
+              data-tab="archives"
+              type="button"
+              role="tab"
+              aria-controls="archivesPanel"
+              aria-selected="false"
+              aria-label="封包：等待封包提示，未选中"
+              title="封包：等待封包提示，未选中"
+              tabindex="-1"
+            >
+              封包
+            </button>
+            <button
+              class="tab"
+              id="tab-authorizedPlugins"
+              data-tab="authorizedPlugins"
+              type="button"
+              role="tab"
+              aria-controls="authorizedPluginsPanel"
+              aria-selected="false"
+              aria-label="插件：等待授权插件状态，未选中"
+              title="插件：等待授权插件状态，未选中"
+              tabindex="-1"
+            >
+              插件
+            </button>
+            <button
+              class="tab"
+              id="tab-log"
+              data-tab="log"
+              type="button"
+              role="tab"
+              aria-controls="logPanel"
+              aria-selected="false"
+              aria-label="日志：暂无日志，未选中"
+              title="日志：暂无日志，未选中"
+              tabindex="-1"
+            >
+              日志
+            </button>
           </nav>
 
-          <section id="overviewPanel" class="tab-panel active" role="tabpanel" aria-labelledby="tab-overview" aria-live="polite" tabindex="0"></section>
-          <section id="categoriesPanel" class="tab-panel" role="tabpanel" aria-labelledby="tab-categories" aria-live="polite" tabindex="0" hidden></section>
-          <section id="archivesPanel" class="tab-panel" role="tabpanel" aria-labelledby="tab-archives" aria-live="polite" tabindex="0" hidden></section>
-          <section id="authorizedPluginsPanel" class="tab-panel" role="tabpanel" aria-labelledby="tab-authorizedPlugins" aria-live="polite" tabindex="0" hidden></section>
-          <section id="logPanel" class="tab-panel" role="tabpanel" aria-labelledby="tab-log" aria-live="polite" tabindex="0" hidden></section>
+          <section
+            id="overviewPanel"
+            class="tab-panel active"
+            role="tabpanel"
+            aria-labelledby="tab-overview"
+            aria-description="总览面板，等待扫描结果"
+            aria-live="polite"
+            tabindex="0"
+          ></section>
+          <section
+            id="categoriesPanel"
+            class="tab-panel"
+            role="tabpanel"
+            aria-labelledby="tab-categories"
+            aria-description="分类面板，等待扫描分类"
+            aria-live="polite"
+            tabindex="0"
+            hidden
+          ></section>
+          <section
+            id="archivesPanel"
+            class="tab-panel"
+            role="tabpanel"
+            aria-labelledby="tab-archives"
+            aria-description="封包面板，等待封包提示"
+            aria-live="polite"
+            tabindex="0"
+            hidden
+          ></section>
+          <section
+            id="authorizedPluginsPanel"
+            class="tab-panel"
+            role="tabpanel"
+            aria-labelledby="tab-authorizedPlugins"
+            aria-description="插件面板，等待授权插件状态"
+            aria-live="polite"
+            tabindex="0"
+            hidden
+          ></section>
+          <section
+            id="logPanel"
+            class="tab-panel"
+            role="tabpanel"
+            aria-labelledby="tab-log"
+            aria-description="日志面板，暂无日志"
+            aria-live="polite"
+            tabindex="0"
+            hidden
+          ></section>
         </section>
       </section>
     </main>

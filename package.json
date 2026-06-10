@@ -7,8 +7,9 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "check": "node --check electron/main.js && node --check electron/preload.js && node --check src/plugin-host.js && node --check src/authorized-plugins.js && node --check src/app.js && node --check examples/external-demo-plugin.gabplugin.js && node --check examples/plugin-package-demo/plugin.gabplugin.js",
-    "release:check": "npm run check && node scripts/release-check.js",
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check electron/extractor-gateway.js && node --check src/plugin-host.js && node --check src/authorized-plugins.js && node --check src/app.js && node --check examples/external-demo-plugin.gabplugin.js && node --check examples/plugin-package-demo/plugin.gabplugin.js && node --check scripts/gateway-check.js",
+    "gateway:check": "node scripts/gateway-check.js",
+    "release:check": "npm run check && npm run gateway:check && node scripts/release-check.js",
     "pack": "electron-builder --dir",
     "pack:win": "electron-builder --win --dir",
     "dist": "electron-builder --publish never",

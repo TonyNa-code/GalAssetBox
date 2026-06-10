@@ -32,6 +32,9 @@ GalAssetBox 是一个本地优先的 galgame 资源整理器。
 - 生成 `GalAssetBox_整理报告.md`
 - 生成 `GalAssetBox_素材清单.csv`
 - 识别 `.xp3`、`.rpa`、`.nsa`、`.pck`、`.dat` 等常见资源封包并写入清单
+- 桌面版会为封包规划提取路线：普通压缩包、VN/游戏封包、Unity、游戏音频、媒体探测或授权适配器
+- 桌面版可以调用本机 `7zz` / `7z` / `bsdtar` / `unar` 解开 `.zip`、`.rar`、`.7z`、`.tar` 等普通外层压缩包
+- 桌面版可以手动绑定 GARbro、AssetRipper、vgmstream 等外部工具的可执行文件路径
 - 提供授权插件接口，用于自制、开源或明确授权项目的格式适配
 - 用户确认后运行已启用的授权插件，把输出写入独立插件结果目录
 - 在插件页启用/停用插件，状态保存在当前浏览器本地
@@ -45,6 +48,7 @@ GalAssetBox 是一个本地优先的 galgame 资源整理器。
 
 - 提供游戏本体或素材下载
 - 破解封包
+- 解密受保护资源
 - 绕过 DRM
 - 运行游戏程序
 - 上传本地文件
@@ -79,6 +83,7 @@ http://localhost:4174
 项目已经加入 Electron 桌面版：
 
 - [DESKTOP.md](./docs/DESKTOP.md)
+- [EXTRACTOR_GATEWAY.md](./docs/EXTRACTOR_GATEWAY.md)
 - [WINDOWS.md](./docs/WINDOWS.md)
 - [RELEASE_CHECKLIST.md](./docs/RELEASE_CHECKLIST.md)
 - [electron/main.js](./electron/main.js)
@@ -146,7 +151,9 @@ GalAssetBox_整理结果_20260513_0030/
 
 GalAssetBox 只整理用户自己选择的本地文件夹中已经明文存在的开放格式文件。
 
-加密或专有资源封包只做识别和清单提示，不做拆包、解密、破解或 DRM 绕过。
+普通外层压缩包可以在桌面版里交给本机工具解包，然后再扫描输出目录。
+
+加密、受保护或引擎专有资源封包需要明确授权的适配器或外部工具路线，不做解密、破解或 DRM 绕过。
 
 ## 授权插件接口
 

@@ -64,8 +64,13 @@ The browser version still works as before. In Electron, the preload bridge expos
 - opening the generated result folder after a completed run
 - reading files for authorized plugins
 - writing authorized plugin output and reports
+- detecting local extractor tools for ordinary archives, VN archives, Unity assets, game audio, and media probing
+- manually binding extractor executable paths when tools are not on PATH
+- extracting selected ordinary archives such as `.zip`, `.rar`, `.7z`, and `.tar` to a separate result folder
 
 The bridge does not upload files, run game executables, decrypt protected archives, bundle third-party keys, or bypass DRM.
+
+See [EXTRACTOR_GATEWAY.md](./EXTRACTOR_GATEWAY.md) for the extractor routing model.
 
 ## Security Defaults
 
@@ -74,6 +79,7 @@ The bridge does not upload files, run game executables, decrypt protected archiv
 - renderer sandboxing is enabled
 - only the small `GalAssetBoxDesktop` bridge is exposed
 - bridge file reads/writes are limited to folders the user selected in native dialogs
+- external tool path configuration is stored locally in the app user-data directory
 - all output paths are sanitized
 - relative paths containing `..` are rejected
 

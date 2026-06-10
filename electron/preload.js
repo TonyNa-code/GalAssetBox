@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld("GalAssetBoxDesktop", {
   scanDirectory(rootPath) {
     return ipcRenderer.invoke("desktop:scan-directory", rootPath);
   },
+  useDirectoryAsSource(targetPath) {
+    return ipcRenderer.invoke("desktop:use-directory-as-source", targetPath);
+  },
   organizeAssets(payload) {
     return ipcRenderer.invoke("desktop:organize-assets", payload);
   },
@@ -22,6 +25,21 @@ contextBridge.exposeInMainWorld("GalAssetBoxDesktop", {
   },
   writePluginRunReports(payload) {
     return ipcRenderer.invoke("desktop:write-plugin-run-reports", payload);
+  },
+  getExtractorStatus() {
+    return ipcRenderer.invoke("desktop:get-extractor-status");
+  },
+  planExtraction(payload) {
+    return ipcRenderer.invoke("desktop:plan-extraction", payload);
+  },
+  extractCommonArchives(payload) {
+    return ipcRenderer.invoke("desktop:extract-common-archives", payload);
+  },
+  pickExtractorTool(toolId) {
+    return ipcRenderer.invoke("desktop:pick-extractor-tool", toolId);
+  },
+  clearExtractorTool(toolId) {
+    return ipcRenderer.invoke("desktop:clear-extractor-tool", toolId);
   },
   openPath(targetPath) {
     return ipcRenderer.invoke("desktop:open-path", targetPath);
