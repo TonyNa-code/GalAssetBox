@@ -579,6 +579,30 @@ button[data-next-action="true"]:focus-visible {
   line-height: 1.2;
 }
 
+.advanced-action-hint {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--blue);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(63, 117, 162, 0.07);
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.advanced-action-hint[data-state="ready"] {
+  border-left-color: var(--green);
+  background: rgba(47, 141, 116, 0.08);
+  color: var(--green-dark);
+}
+
+.advanced-action-hint[data-state="blocked"] {
+  border-left-color: var(--amber);
+  background: rgba(212, 149, 52, 0.1);
+  color: var(--amber-dark);
+}
+
 .mode-switch button {
   min-height: 36px;
   font-size: 13px;
@@ -2150,6 +2174,18 @@ body[data-mode="beginner"] .advanced-only {
   .preflight-grid {
     grid-template-columns: 1fr;
   }
+
+  .result-action-row,
+  .plugin-action-row,
+  .plugin-manager-row {
+    align-items: stretch;
+  }
+
+  .result-action-row button,
+  .plugin-action-row button,
+  .plugin-manager-row button {
+    width: 100%;
+  }
 }
 
 @media (max-width: 380px) {
@@ -2200,11 +2236,6 @@ body[data-mode="beginner"] .advanced-only {
     font-size: 13px;
   }
 
-  .result-action-row button,
-  .plugin-action-row button,
-  .plugin-manager-row button {
-    width: 100%;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

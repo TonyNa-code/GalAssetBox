@@ -8,9 +8,11 @@ It is not a universal cracker. It is a local routing layer that detects file typ
 
 1. Common archives
    - Examples: `.zip`, `.rar`, `.7z`, `.tar`, `.gz`, `.iso`
+   - Signature-detected common archives are also eligible, even when the extension is generic such as `.dat` or `.pak`
    - Tools: `7zz`, `7z`, `bsdtar`, `unar`
    - Current status: can extract to `GalAssetBox_通用解包结果_*/10_通用解包输出/`
    - After extraction, the desktop UI can register `10_通用解包输出/` as the new source and scan it directly.
+   - Failed fallback attempts write to temporary directories and are cleaned before the next tool is tried.
 
 2. Visual novel and game archives
    - Examples: `.xp3`, `.rpa`, `.nsa`, `.arc`, `.pck`, `.dat`, `.pak`
@@ -58,6 +60,7 @@ The desktop app first looks for supported tools in PATH. If a tool is installed 
 Manual paths are stored in the app's local user-data configuration as `extractor-tools.json`.
 
 The renderer UI shows only the tool name and executable file name. Diagnostic exports include availability, source type, and command file name, not the full local path.
+IPC responses are sanitized before they reach the renderer; full executable paths stay in the Electron main process.
 
 Manual configuration is for local extraction tools only. It does not grant permission to bypass DRM, provide keys, or unpack protected archives without authorization.
 

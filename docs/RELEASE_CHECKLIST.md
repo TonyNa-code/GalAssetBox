@@ -9,7 +9,6 @@ Run:
 ```bash
 npm ci
 npm run release:check
-npm audit --audit-level=moderate
 ```
 
 The release check verifies:
@@ -23,6 +22,7 @@ The release check verifies:
 - help summary and category-rule features are present
 - text files do not contain obvious local paths, private emails, old project names, or assistant transcript wording
 - generated folders such as `node_modules/` and `dist/` are ignored
+- dependency audit passes at `moderate` or higher, excluding optional packages
 
 ## Browser Smoke Test
 

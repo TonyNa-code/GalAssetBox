@@ -25,6 +25,12 @@ const SKIPPED_DIRS = new Set([
   "temp",
 ]);
 
+const GENERATED_DIR_PREFIXES = [
+  "galassetbox_整理结果",
+  "galassetbox_通用解包结果",
+  "galassetbox_授权插件结果",
+];
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1360,
@@ -166,14 +172,18 @@ ipcMain.handle("desktop:write-plugin-run-reports", async (_event, payload) => {
 });
 
 ipcMain.handle("desktop:get-extractor-status", async () => {
-  return getExtractorStatus(await loadExtractorToolOverrides());
+  return sanitizeExtractorStatus(await getExtractorStatus(await loadExtractorToolOverrides()));
 });
 
 ipcMain.handle("desktop:plan-extraction", async (_event, payload) => {
   const sourceRoot = assertInsideRegisteredRoot(payload.sourceRootPath, selectedSourceRoots, "源目录");
-  return planExtraction(sourceRoot, payload.records || [], {
+  const plan = await planExtraction(sourceRoot, payload.records || [], {
     toolOverrides: await loadExtractorToolOverrides(),
   });
+  return {
+    ...plan,
+    status: sanitizeExtractorStatus(plan.status),
+  };
 });
 
 ipcMain.handle("desktop:extract-common-archives", async (_event, payload) => {
@@ -205,7 +215,7 @@ ipcMain.handle("desktop:pick-extractor-tool", async (_event, toolId) => {
     canceled: false,
     toolId,
     name: path.basename(selectedPath),
-    status: await getExtractorStatus(overrides),
+    status: sanitizeExtractorStatus(await getExtractorStatus(overrides)),
   };
 });
 
@@ -216,7 +226,7 @@ ipcMain.handle("desktop:clear-extractor-tool", async (_event, toolId) => {
   await saveExtractorToolOverrides(overrides);
   return {
     ok: true,
-    status: await getExtractorStatus(overrides),
+    status: sanitizeExtractorStatus(await getExtractorStatus(overrides)),
   };
 });
 
@@ -232,7 +242,7 @@ async function walkDirectory(root, current, files) {
     const absolutePath = path.join(current, entry.name);
     if (entry.isDirectory()) {
       const lower = entry.name.toLowerCase();
-      if (SKIPPED_DIRS.has(lower) || lower.startsWith("galassetbox_整理结果")) continue;
+      if (SKIPPED_DIRS.has(lower) || isGeneratedOutputDir(lower)) continue;
       await walkDirectory(root, absolutePath, files);
       continue;
     }
@@ -244,6 +254,10 @@ async function walkDirectory(root, current, files) {
       size: stat.size,
     });
   }
+}
+
+function isGeneratedOutputDir(lowerName) {
+  return GENERATED_DIR_PREFIXES.some((prefix) => lowerName.startsWith(prefix));
 }
 
 function resolveInside(root, relativePath) {
@@ -304,6 +318,27 @@ async function saveExtractorToolOverrides(overrides) {
 
 function getExtractorToolConfigPath() {
   return path.join(app.getPath("userData"), EXTRACTOR_TOOL_CONFIG_FILE);
+}
+
+function sanitizeExtractorStatus(status) {
+  const tools = {};
+  for (const [toolId, tool] of Object.entries(status?.tools || {})) {
+    tools[toolId] = {
+      id: tool.id,
+      label: tool.label,
+      commandName: tool.commandName || "",
+      available: Boolean(tool.available),
+      configured: Boolean(tool.configured),
+      source: tool.source || "missing",
+      roles: Array.isArray(tool.roles) ? tool.roles.slice() : [],
+      installHint: tool.installHint || "",
+    };
+  }
+  return {
+    checkedAt: status?.checkedAt || new Date().toISOString(),
+    tools,
+    capabilities: { ...(status?.capabilities || {}) },
+  };
 }
 
 function isInsideOrSame(root, targetPath) {

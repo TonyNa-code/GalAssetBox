@@ -50,6 +50,8 @@ const UNITY_EXTS = new Set(["assets", "unity3d", "bundle", "ress", "resS".toLowe
 const GAME_AUDIO_EXTS = new Set(["acb", "awb", "hca", "adx", "wem", "fsb", "at3", "xma", "xa", "dsp"]);
 const MEDIA_PROBE_EXTS = new Set(["movie", "mp4", "mkv", "webm", "avi", "mov", "wmv", "mpg", "mpeg"]);
 const MAX_COMMON_ARCHIVE_RUN = 12;
+const MAX_EXTRACTED_FILES_PER_ARCHIVE = 20000;
+const MAX_EXTRACTED_BYTES_PER_ARCHIVE = 8 * 1024 * 1024 * 1024;
 
 const TOOL_DEFS = [
   {
@@ -182,13 +184,7 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
     throw new Error("没有找到可用的普通压缩包解包工具，请安装 7-Zip、bsdtar 或 unar。");
   }
 
-  const candidates = records
-    .map((record) => ({
-      ...record,
-      relativePath: normalizeRelativePath(record.relativePath || record.path),
-      ext: String(record.ext || path.extname(record.relativePath || record.path).slice(1)).toLowerCase(),
-    }))
-    .filter((record) => COMMON_ARCHIVE_EXTS.has(record.ext));
+  const candidates = await getCommonArchiveCandidates(sourceRoot, records);
   const selected = candidates.slice(0, MAX_COMMON_ARCHIVE_RUN);
   const omitted = Math.max(0, candidates.length - selected.length);
 
@@ -203,18 +199,27 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
   for (const [index, record] of selected.entries()) {
     const sourcePath = resolveInside(sourceRoot, record.relativePath);
     const sourceName = path.basename(record.relativePath, path.extname(record.relativePath));
-    const targetDir = path.join(extractRoot, `${String(index + 1).padStart(2, "0")}_${safeSegment(sourceName)}`);
+    const targetName = `${String(index + 1).padStart(2, "0")}_${safeSegment(sourceName)}`;
+    const targetDir = path.join(extractRoot, targetName);
     assertInside(resultRoot, targetDir, "解包输出目录");
-    await fs.mkdir(targetDir, { recursive: true });
 
     const attempts = [];
     let extractedRow = null;
 
     for (const tool of tools) {
-      const command = buildCommonArchiveCommand(tool, sourcePath, targetDir);
+      const attemptDir = path.join(
+        extractRoot,
+        `.attempt_${String(index + 1).padStart(2, "0")}_${safeSegment(tool.id)}_${Date.now()}`,
+      );
+      assertInside(resultRoot, attemptDir, "解包临时目录");
+      await fs.rm(attemptDir, { recursive: true, force: true });
+      await fs.mkdir(attemptDir, { recursive: true });
+      const command = buildCommonArchiveCommand(tool, sourcePath, attemptDir);
       try {
         const result = await runTool(command.command, command.args, { timeoutMs: 30 * 60 * 1000 });
-        const fileCount = await countFiles(targetDir);
+        const inspection = await inspectExtractedTree(attemptDir);
+        await fs.rm(targetDir, { recursive: true, force: true });
+        await fs.rename(attemptDir, targetDir);
         attempts.push({ tool: tool.label, status: "ok", message: trimToolOutput(result.stderr || result.stdout) });
         extractedRow = {
           sourcePath: record.relativePath,
@@ -222,12 +227,14 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
           status: "extracted",
           tool: tool.label,
           attempts,
-          fileCount,
+          fileCount: inspection.fileCount,
+          byteCount: inspection.byteCount,
           message: trimToolOutput(result.stderr || result.stdout),
         };
         break;
       } catch (error) {
         attempts.push({ tool: tool.label, status: "failed", message: trimToolOutput(error.message) });
+        await fs.rm(attemptDir, { recursive: true, force: true });
       }
     }
 
@@ -241,6 +248,7 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
         tool: attempts.map((attempt) => attempt.tool).join(" -> "),
         attempts,
         fileCount: 0,
+        byteCount: 0,
         message: attempts.map((attempt) => `${attempt.tool}: ${attempt.message}`).join(" | "),
       });
     }
@@ -258,6 +266,33 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
     extracted: rows.filter((row) => row.status === "extracted").length,
     failed: rows.filter((row) => row.status === "failed").length,
   };
+}
+
+async function getCommonArchiveCandidates(sourceRoot, records = []) {
+  const candidates = [];
+  for (const record of records) {
+    const relativePath = normalizeRelativePath(record.relativePath || record.path);
+    const ext = String(record.ext || path.extname(relativePath).slice(1)).toLowerCase();
+    const sourcePath = resolveInside(sourceRoot, relativePath);
+    let signatureLabel = "";
+    let isCommonArchive = COMMON_ARCHIVE_EXTS.has(ext);
+
+    if (!isCommonArchive) {
+      const detected = detectSignature(await readSignature(sourcePath));
+      signatureLabel = detected.label;
+      isCommonArchive = detected.commonArchive;
+    }
+
+    if (isCommonArchive) {
+      candidates.push({
+        ...record,
+        relativePath,
+        ext,
+        signature: signatureLabel,
+      });
+    }
+  }
+  return candidates;
 }
 
 function createPlanItem({ path: relativePath, ext, size, signature, tools }) {
@@ -552,18 +587,39 @@ function runTool(command, args, { timeoutMs }) {
   });
 }
 
-async function countFiles(root) {
-  let count = 0;
+async function inspectExtractedTree(root) {
+  const rootRealPath = await fs.realpath(root);
+  let fileCount = 0;
+  let byteCount = 0;
   const visit = async (current) => {
     const entries = await fs.readdir(current, { withFileTypes: true });
     for (const entry of entries) {
       const next = path.join(current, entry.name);
-      if (entry.isDirectory()) await visit(next);
-      else if (entry.isFile()) count += 1;
+      const stat = await fs.lstat(next);
+      const realPath = await fs.realpath(next);
+      if (!isInsideOrSame(rootRealPath, realPath)) {
+        throw new Error("解包结果包含指向输出目录外的路径。");
+      }
+
+      if (stat.isSymbolicLink()) {
+        throw new Error("解包结果包含符号链接，请人工确认后再处理。");
+      }
+      if (stat.isDirectory()) {
+        await visit(next);
+      } else if (stat.isFile()) {
+        fileCount += 1;
+        byteCount += stat.size;
+        if (fileCount > MAX_EXTRACTED_FILES_PER_ARCHIVE) {
+          throw new Error(`单个压缩包解出文件超过 ${MAX_EXTRACTED_FILES_PER_ARCHIVE} 个，已中止。`);
+        }
+        if (byteCount > MAX_EXTRACTED_BYTES_PER_ARCHIVE) {
+          throw new Error(`单个压缩包解出内容超过 ${formatByteLimit(MAX_EXTRACTED_BYTES_PER_ARCHIVE)}，已中止。`);
+        }
+      }
     }
   };
   await visit(root);
-  return count;
+  return { fileCount, byteCount };
 }
 
 function buildExtractionMarkdown(resultRootName, rows, { omitted = 0 } = {}) {
@@ -593,16 +649,23 @@ function buildExtractionMarkdown(resultRootName, rows, { omitted = 0 } = {}) {
 }
 
 function buildExtractionCsv(rows) {
-  const header = ["source_path", "output_path", "status", "tool", "file_count", "attempts", "message"];
+  const header = ["source_path", "output_path", "status", "tool", "file_count", "byte_count", "attempts", "message"];
   return [header, ...rows.map((row) => [
     row.sourcePath,
     row.outputPath,
     row.status,
     row.tool,
     String(row.fileCount),
+    String(row.byteCount || 0),
     (row.attempts || []).map((attempt) => `${attempt.tool}:${attempt.status}`).join(" -> "),
     row.message,
   ])].map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+function formatByteLimit(value) {
+  if (value >= 1024 * 1024 * 1024) return `${Math.round(value / 1024 / 1024 / 1024)} GB`;
+  if (value >= 1024 * 1024) return `${Math.round(value / 1024 / 1024)} MB`;
+  return `${value} B`;
 }
 
 function trimToolOutput(value) {
@@ -677,5 +740,6 @@ module.exports = {
     safeSegment,
     sanitizeRuntimeText,
     isInsideOrSame,
+    inspectExtractedTree,
   },
 };

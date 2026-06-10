@@ -126,6 +126,12 @@ function checkPackageScripts() {
   } else {
     fail("electron-builder version pinned", "electron-builder must not use latest");
   }
+
+  if (String(pkg.scripts?.["release:check"] || "").includes("npm audit --audit-level=moderate --omit=optional")) {
+    pass("release audit gate");
+  } else {
+    fail("release audit gate", "release:check must run npm audit --audit-level=moderate --omit=optional");
+  }
 }
 
 function checkElectronSafety() {
@@ -147,6 +153,8 @@ function checkElectronSafety() {
     ["desktop:pick-extractor-tool", main],
     ["resolveOutputRoot", main],
     ["assertInsideRoot", main],
+    ["sanitizeExtractorStatus", main],
+    ["GENERATED_DIR_PREFIXES", main],
     ["planExtraction(payload)", preload],
     ["extractCommonArchives(payload)", preload],
     ["useDirectoryAsSource(targetPath)", preload],
