@@ -174,6 +174,8 @@ function checkElectronSafety() {
     ["PolicyViolationError", gateway],
     ["resolveExistingInside", gateway],
     ["sanitizeRuntimeText", gateway],
+    ["buildToolEnv", gateway],
+    ["policy-blocked", gateway],
     ["getCommonArchiveTools", gateway],
   ];
   const missing = requiredSnippets.filter(([snippet, text]) => !text.includes(snippet)).map(([snippet]) => snippet);
@@ -218,7 +220,9 @@ function checkUserFacingHelpers() {
     "buildHelpSummaryMarkdown",
     "downloadHelpSummary",
     "renderPreflightSummary",
+    "renderCurrentSuggestion",
     "renderCategoryRulePanel",
+    "getAuthorizedPluginActionReason",
     "GalAssetBox.category.rules.v1",
   ];
   const missing = requiredSnippets.filter((snippet) => !app.includes(snippet));

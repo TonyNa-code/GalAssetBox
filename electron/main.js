@@ -92,7 +92,7 @@ ipcMain.handle("desktop:scan-directory", async (_event, rootPath) => {
 
 ipcMain.handle("desktop:use-directory-as-source", async (_event, targetPath) => {
   const allowedRoots = new Set([...selectedSourceRoots, ...selectedOutputRoots]);
-  const selectedPath = assertInsideRegisteredRoot(targetPath, allowedRoots, "源目录");
+  const selectedPath = await assertExistingInsideRegisteredRoot(targetPath, allowedRoots, "源目录");
   const stat = await fs.stat(selectedPath);
   if (!stat.isDirectory()) {
     throw new Error("目标不是文件夹。");
@@ -238,7 +238,8 @@ ipcMain.handle("desktop:clear-extractor-tool", async (_event, toolId) => {
 
 ipcMain.handle("desktop:open-path", async (_event, targetPath) => {
   const allowedRoots = new Set([...selectedSourceRoots, ...selectedOutputRoots]);
-  const error = await shell.openPath(assertInsideRegisteredRoot(targetPath, allowedRoots, "打开路径"));
+  const target = await assertExistingInsideRegisteredRoot(targetPath, allowedRoots, "打开路径");
+  const error = await shell.openPath(target);
   return { ok: !error, error };
 });
 

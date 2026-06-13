@@ -204,6 +204,7 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
   const candidates = await getCommonArchiveCandidates(sourceRoot, records);
   const selected = candidates.slice(0, MAX_COMMON_ARCHIVE_RUN);
   const omitted = Math.max(0, candidates.length - selected.length);
+  const omittedPreview = candidates.slice(selected.length, selected.length + 5).map((record) => record.relativePath);
 
   if (!selected.length) throw new Error("当前没有可由通用工具处理的普通压缩包。");
 
@@ -222,6 +223,7 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
 
     const attempts = [];
     let extractedRow = null;
+    let blockedByPolicy = false;
 
     for (const tool of tools) {
       const attemptDir = path.join(
@@ -250,9 +252,13 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
         };
         break;
       } catch (error) {
-        attempts.push({ tool: tool.label, status: "failed", message: trimToolOutput(error.message) });
+        const attemptStatus = error.policyViolation ? "policy-blocked" : "failed";
+        attempts.push({ tool: tool.label, status: attemptStatus, message: trimToolOutput(error.message) });
         await fs.rm(attemptDir, { recursive: true, force: true });
-        if (error.policyViolation) break;
+        if (error.policyViolation) {
+          blockedByPolicy = true;
+          break;
+        }
       }
     }
 
@@ -262,7 +268,7 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
       rows.push({
         sourcePath: record.relativePath,
         outputPath: path.relative(resultRoot, targetDir).replaceAll(path.sep, "/"),
-        status: "failed",
+        status: blockedByPolicy ? "policy-blocked" : "failed",
         tool: attempts.map((attempt) => attempt.tool).join(" -> "),
         attempts,
         fileCount: 0,
@@ -272,7 +278,12 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
     }
   }
 
-  await fs.writeFile(path.join(resultRoot, "GalAssetBox_通用解包报告.md"), buildExtractionMarkdown(resultRootName, rows, { omitted }), "utf8");
+  await fs.writeFile(path.join(resultRoot, "GalAssetBox_通用解包报告.md"), buildExtractionMarkdown(resultRootName, rows, {
+    candidateCount: candidates.length,
+    processedCount: selected.length,
+    omitted,
+    omittedPreview,
+  }), "utf8");
   await fs.writeFile(path.join(resultRoot, "GalAssetBox_通用解包清单.csv"), buildExtractionCsv(rows), "utf8");
 
   return {
@@ -280,9 +291,13 @@ async function extractCommonArchives({ sourceRoot, outputRoot, resultRootName, r
     resultRootName,
     tool: tools.map((tool) => tool.label).join(" -> "),
     rows,
+    candidateCount: candidates.length,
+    processedCount: selected.length,
     omitted,
+    omittedPreview,
     extracted: rows.filter((row) => row.status === "extracted").length,
     failed: rows.filter((row) => row.status === "failed").length,
+    policyBlocked: rows.filter((row) => row.status === "policy-blocked").length,
   };
 }
 
@@ -573,7 +588,7 @@ async function findExecutable(command) {
     }
   }
 
-  const env = { ...process.env, PATH: buildToolPathEnv() };
+  const env = buildToolEnv();
   const locator = process.platform === "win32" ? "where.exe" : "which";
   try {
     const { stdout } = await execFileAsync(locator, [command], { env, timeout: 1800, windowsHide: true });
@@ -591,10 +606,35 @@ function buildToolPathEnv() {
   return [...new Set([...additions, ...existing])].join(path.delimiter);
 }
 
+function buildToolEnv() {
+  const env = { PATH: buildToolPathEnv() };
+  const allowed = [
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "HOME",
+    "USERPROFILE",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "LANG",
+    "LC_ALL",
+    "USER",
+    "USERNAME",
+  ];
+  for (const key of allowed) {
+    if (process.env[key]) env[key] = process.env[key];
+  }
+  return env;
+}
+
 function runTool(command, args, { timeoutMs }) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      env: { ...process.env, PATH: buildToolPathEnv() },
+      env: buildToolEnv(),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -632,14 +672,14 @@ async function inspectExtractedTree(root) {
     for (const entry of entries) {
       const next = path.join(current, entry.name);
       const stat = await fs.lstat(next);
+      if (stat.isSymbolicLink()) {
+        throw new PolicyViolationError("解包结果包含符号链接，请人工确认后再处理。");
+      }
       const realPath = await fs.realpath(next);
       if (!isInsideOrSame(rootRealPath, realPath)) {
         throw new PolicyViolationError("解包结果包含指向输出目录外的路径。");
       }
 
-      if (stat.isSymbolicLink()) {
-        throw new PolicyViolationError("解包结果包含符号链接，请人工确认后再处理。");
-      }
       if (stat.isDirectory()) {
         await visit(next);
       } else if (stat.isFile()) {
@@ -658,9 +698,15 @@ async function inspectExtractedTree(root) {
   return { fileCount, byteCount };
 }
 
-function buildExtractionMarkdown(resultRootName, rows, { omitted = 0 } = {}) {
+function buildExtractionMarkdown(resultRootName, rows, {
+  candidateCount = rows.length,
+  processedCount = rows.length,
+  omitted = 0,
+  omittedPreview = [],
+} = {}) {
   const extracted = rows.filter((row) => row.status === "extracted").length;
   const failed = rows.filter((row) => row.status === "failed").length;
+  const policyBlocked = rows.filter((row) => row.status === "policy-blocked").length;
   const totalBytes = rows.reduce((sum, row) => sum + Number(row.byteCount || 0), 0);
   const lines = [
     `# ${resultRootName}`,
@@ -675,14 +721,20 @@ function buildExtractionMarkdown(resultRootName, rows, { omitted = 0 } = {}) {
     "",
     "## 汇总",
     "",
+    `- 候选总数：${candidateCount}`,
+    `- 本轮处理：${processedCount}`,
     `- 成功：${extracted}`,
-    `- 失败：${failed}`,
+    `- 普通失败：${failed}`,
+    `- 策略拦截：${policyBlocked}`,
     `- 未处理：${omitted}`,
     `- 已解出大小：${formatByteLimit(totalBytes)}`,
     "",
   ];
   if (omitted > 0) {
     lines.push(`- 本轮还有 ${omitted} 个普通压缩包未处理，请分批运行。`);
+    if (omittedPreview.length) {
+      lines.push(`- 未处理预览：${omittedPreview.map((item) => trimToolOutput(item)).join("、")}`);
+    }
     lines.push("");
   }
   lines.push("## 结果", "");
@@ -721,9 +773,9 @@ function trimToolOutput(value) {
 
 function sanitizeRuntimeText(value) {
   return String(value || "")
-    .replace(/[A-Za-z]:[\\/](Users|Documents and Settings)[\\/][^\s"'<>|]+/g, "[local-path]")
-    .replace(/\/Users\/[^\s"'<>|]+/g, "[local-path]")
-    .replace(/\/home\/[^\s"'<>|]+/g, "[local-path]")
+    .replace(/\\\\[^\s"'<>|\\]+\\[^\s"'<>|]+/g, "[local-path]")
+    .replace(/[A-Za-z]:[\\/][^\s"'<>|]+/g, "[local-path]")
+    .replace(/\/(?:Users|home|Volumes|private\/var|tmp|var\/folders|opt\/homebrew|usr\/local)\/[^\s"'<>|]+/g, "[local-path]")
     .replace(/\s+/g, " ")
     .trim();
 }

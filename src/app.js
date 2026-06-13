@@ -60,7 +60,7 @@ const AUDIO_EXTS = new Set(["ogg", "mp3", "wav", "flac", "m4a", "aac", "opus", "
 const VIDEO_EXTS = new Set(["mp4", "webm", "avi", "wmv", "mpg", "mpeg", "mkv", "mov"]);
 const TEXT_EXTS = new Set(["txt", "ks", "rpy", "rpyc", "json", "csv", "xml", "ini", "lua", "js", "po", "yaml", "yml"]);
 const COMMON_ARCHIVE_EXTS = new Set(["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "lzma", "cab", "iso", "lzh"]);
-const ENGINE_ARCHIVE_EXTS = new Set(["xp3", "rpa", "rpi", "nsa", "ns2", "sar", "arc", "pck", "dat", "pak", "wolf", "pac", "cpk", "afs", "ald", "int", "gxp", "cpz", "ypf", "unity3d", "assets", "bundle"]);
+const ENGINE_ARCHIVE_EXTS = new Set(["xp3", "rpa", "rpi", "nsa", "ns2", "sar", "arc", "pck", "dat", "pak", "wolf", "pac", "cpk", "afs", "ald", "int", "gxp", "cpz", "ypf", "unity3d", "assets", "bundle", "ress"]);
 const GAME_AUDIO_EXTS = new Set(["acb", "awb", "hca", "adx", "wem", "fsb", "at3", "xma", "xa", "dsp"]);
 const PROBE_MEDIA_EXTS = new Set(["movie"]);
 const ARCHIVE_EXTS = new Set([...COMMON_ARCHIVE_EXTS, ...ENGINE_ARCHIVE_EXTS, ...GAME_AUDIO_EXTS, ...PROBE_MEDIA_EXTS]);
@@ -1219,6 +1219,14 @@ function getCommonArchiveButtonLabel(pendingCount = getPendingCommonArchiveRecor
     : `通用解包 ${formatNumber(batchCount)} 个`;
 }
 
+function getAuthorizedPluginActionReason(runnableCount = getTransformPluginMatches(currentRecords).length) {
+  if (!(sourceHandle || desktopSource)) return "先选择游戏文件夹。";
+  if (!(outputHandle || desktopOutput)) return "先选择输出文件夹。";
+  if (!currentRecords.length) return "先扫描素材。";
+  if (!runnableCount) return "没有可执行的授权插件匹配项。";
+  return `将运行 ${formatNumber(runnableCount)} 个授权插件匹配项。`;
+}
+
 function getExtractorToolsForConfig() {
   return Object.values(extractorStatus?.tools || {});
 }
@@ -1623,6 +1631,7 @@ async function runCommonArchiveExtraction() {
     for (const row of rows) {
       attemptedCommonArchivePaths.add(row.sourcePath);
       if (row.status === "failed") currentLog.push(`通用解包失败：${row.sourcePath} - ${row.message}`);
+      if (row.status === "policy-blocked") currentLog.push(`通用解包被策略拦截：${row.sourcePath} - ${row.message}`);
     }
     const pendingAfter = getPendingCommonArchiveRecords().length;
     lastExtractionRun = {
@@ -1634,13 +1643,18 @@ async function runCommonArchiveExtraction() {
       rows,
       extracted: result.extracted || 0,
       failed: result.failed || 0,
+      policyBlocked: result.policyBlocked || 0,
       omitted: result.omitted || 0,
+      candidateCount: result.candidateCount || rows.length,
+      processedCount: result.processedCount || rows.length,
+      omittedPreview: result.omittedPreview || [],
       pendingAfter,
       finishedAt: new Date().toISOString(),
     };
-    currentLog.push(`通用解包完成：成功 ${formatNumber(lastExtractionRun.extracted)} 个，失败 ${formatNumber(lastExtractionRun.failed)} 个，剩余 ${formatNumber(pendingAfter)} 个。`);
-    setProgress("通用解包完成", `结果已写入 ${resultRootName}，可一键扫描解包输出。`, 100, lastExtractionRun.failed ? "warn" : "success");
-    setStatus(lastExtractionRun.failed ? "Partial" : "Extracted", lastExtractionRun.failed ? "warn" : "ready");
+    const hasIssues = Boolean(lastExtractionRun.failed || lastExtractionRun.policyBlocked);
+    currentLog.push(`通用解包完成：成功 ${formatNumber(lastExtractionRun.extracted)} 个，失败 ${formatNumber(lastExtractionRun.failed)} 个，策略拦截 ${formatNumber(lastExtractionRun.policyBlocked)} 个，剩余 ${formatNumber(pendingAfter)} 个。`);
+    setProgress("通用解包完成", `结果已写入 ${resultRootName}，可一键扫描解包输出。`, 100, hasIssues ? "warn" : "success");
+    setStatus(hasIssues ? "Partial" : "Extracted", hasIssues ? "warn" : "ready");
     showToast("通用解包完成");
   } catch (error) {
     currentLog.push(`通用解包失败：${error.message}`);
@@ -1721,6 +1735,7 @@ async function runAuthorizedPlugins() {
   const runRows = [];
   let written = 0;
   let failed = 0;
+  let pluginOutputBytesThisRun = 0;
 
   try {
     const resultRoot = outputHandle
@@ -1734,6 +1749,11 @@ async function runAuthorizedPlugins() {
       const match = matches[index];
       try {
         const outputs = await executeAuthorizedPlugin(match);
+        const outputBytes = outputs.reduce((sum, output) => sum + estimatePluginOutputBytes(output), 0);
+        if (pluginOutputBytesThisRun + outputBytes > MAX_PLUGIN_OUTPUT_TOTAL_BYTES) {
+          throw new Error(`插件本轮输出超过总量上限 ${formatBytes(MAX_PLUGIN_OUTPUT_TOTAL_BYTES)}。`);
+        }
+        pluginOutputBytesThisRun += outputBytes;
         for (const output of outputs) {
           const targetPath = desktopOutput
             ? await writePluginOutputDesktop(desktopOutput.path, resultRootName, match, output)
@@ -2321,7 +2341,10 @@ function buildDiagnosticPackage() {
           tool: lastExtractionRun.tool,
           extracted: lastExtractionRun.extracted,
           failed: lastExtractionRun.failed,
+          policyBlocked: lastExtractionRun.policyBlocked || 0,
           omitted: lastExtractionRun.omitted || 0,
+          candidateCount: lastExtractionRun.candidateCount || 0,
+          processedCount: lastExtractionRun.processedCount || 0,
           finishedAt: lastExtractionRun.finishedAt,
           rows: sanitizeDiagnosticRows(lastExtractionRun.rows),
         }
@@ -2476,7 +2499,9 @@ function buildHelpSummaryMarkdown() {
     lines.push(`- 结果目录：${lastExtractionRun.resultRootName}`);
     lines.push(`- 成功压缩包：${formatNumber(lastExtractionRun.extracted)} 个`);
     lines.push(`- 失败：${formatNumber(lastExtractionRun.failed)} 个`);
+    lines.push(`- 策略拦截：${formatNumber(lastExtractionRun.policyBlocked || 0)} 个`);
     lines.push(`- 未处理：${formatNumber(lastExtractionRun.omitted || 0)} 个`);
+    lines.push(`- 本轮处理：${formatNumber(lastExtractionRun.processedCount || 0)} / ${formatNumber(lastExtractionRun.candidateCount || 0)} 个候选`);
     lines.push(`- 工具：${lastExtractionRun.tool}`);
   } else {
     lines.push("- 尚未运行通用解包。");
@@ -2529,9 +2554,9 @@ function sanitizeHelpText(text) {
 
 function sanitizeDiagnosticText(text) {
   return String(text || "")
-    .replace(/[A-Za-z]:[\\/](Users|Documents and Settings)[\\/][^\s"'<>|]+/g, "[local-path]")
-    .replace(/\/Users\/[^\s"'<>|]+/g, "[local-path]")
-    .replace(/\/home\/[^\s"'<>|]+/g, "[local-path]");
+    .replace(/\\\\[^\s"'<>|\\]+\\[^\s"'<>|]+/g, "[local-path]")
+    .replace(/[A-Za-z]:[\\/][^\s"'<>|]+/g, "[local-path]")
+    .replace(/\/(?:Users|home|Volumes|private\/var|tmp|var\/folders|opt\/homebrew|usr\/local)\/[^\s"'<>|]+/g, "[local-path]");
 }
 
 function sanitizeDiagnosticRows(rows = []) {
@@ -2786,6 +2811,7 @@ function renderOverview(selected, archives) {
       <span>${escapeHtml(disabledText)}</span>
     </div>
     ${sourceContextNotice ? `<article class="notice-card source-context"><h4>当前源目录</h4><p>${escapeHtml(sourceContextNotice)}</p></article>` : ""}
+    ${renderCurrentSuggestion(selected, archives, { pendingCommonArchives, commonActionReason, canExtractCommon })}
     ${renderPreflightSummary(selected, archives)}
     <div class="result-action-row">
       ${archives.length ? `<button id="showArchivesFromOverviewButton" type="button">查看封包路线</button>` : ""}
@@ -2812,6 +2838,78 @@ function renderOverview(selected, archives) {
     ${renderOrganizeRunPreview(lastOrganizeRun)}
     <div class="section-title"><h3>样例路径</h3><span>最多显示 12 个</span></div>
     <div class="sample-list">${selected.slice(0, 12).map((record) => `<code>${escapeHtml(record.path)}</code>`).join("") || "<p>没有选中的开放素材。</p>"}</div>
+  `;
+}
+
+function renderCurrentSuggestion(selected, archives, { pendingCommonArchives = 0, commonActionReason = "", canExtractCommon = false } = {}) {
+  const hasSource = Boolean(sourceHandle || desktopSource);
+  const hasOutput = Boolean(outputHandle || desktopOutput);
+  const pluginMatches = getTransformPluginMatches(currentRecords).length;
+  let action = "扫描素材";
+  let body = "先选择游戏文件夹，再扫描素材。";
+  let meta = "准备中";
+  let tone = "blocked";
+
+  if (!hasSource) {
+    action = "选择游戏文件夹";
+    body = "从左侧选择游戏本体所在的文件夹。";
+    meta = "缺源目录";
+  } else if (!currentRecords.length) {
+    action = "扫描素材";
+    body = "当前源目录已选好，先跑一次扫描生成素材和封包清单。";
+    meta = "待扫描";
+    tone = "warn";
+  } else if (lastExtractionRun?.desktopExtractedPath) {
+    action = "扫描解包输出";
+    body = "上一轮通用解包已经完成，建议把解包输出设为新源目录再扫描一次。";
+    meta = `${formatNumber(lastExtractionRun.extracted)} 个已解出`;
+    tone = "ready";
+  } else if (!hasOutput) {
+    action = "选择输出文件夹";
+    body = "扫描结果已经有了，整理或解包前还需要一个输出位置。";
+    meta = "缺输出目录";
+    tone = "warn";
+  } else if (pendingCommonArchives && canExtractCommon) {
+    action = getCommonArchiveButtonLabel(pendingCommonArchives);
+    body = commonActionReason || "先处理普通外层压缩包，再扫描解包输出。";
+    meta = `${formatNumber(pendingCommonArchives)} 个待处理`;
+    tone = "ready";
+  } else if (pendingCommonArchives) {
+    action = "查看封包路线";
+    body = commonActionReason || "当前有普通压缩包候选，但运行条件还没满足。";
+    meta = `${formatNumber(pendingCommonArchives)} 个候选`;
+    tone = "warn";
+  } else if (selected.length) {
+    action = "开始整理";
+    body = `可以复制 ${formatNumber(selected.length)} 个开放素材到输出文件夹。`;
+    meta = formatBytes(selected.reduce((sum, record) => sum + record.size, 0));
+    tone = "ready";
+  } else if (pluginMatches) {
+    action = "运行授权插件";
+    body = "有插件匹配项可确认运行，适合自制、开源或明确授权的项目格式。";
+    meta = `${formatNumber(pluginMatches)} 个匹配项`;
+    tone = "ready";
+  } else if (archives.length) {
+    action = "导出求助摘要";
+    body = "当前主要是封包提示，先导出摘要给开发者或群友确认格式路线。";
+    meta = `${formatNumber(archives.length)} 个封包`;
+    tone = "warn";
+  } else {
+    action = "导出求助摘要";
+    body = "当前没有可复制素材或可运行路线，建议导出摘要排查。";
+    meta = "需要排查";
+    tone = "blocked";
+  }
+
+  return `
+    <article class="next-suggestion ${tone}" aria-label="当前建议">
+      <div>
+        <span>当前建议</span>
+        <h4>${escapeHtml(action)}</h4>
+        <p>${escapeHtml(body)}</p>
+      </div>
+      <strong>${escapeHtml(meta)}</strong>
+    </article>
   `;
 }
 
@@ -3088,6 +3186,10 @@ function renderExtractorGatewaySummary(archives) {
             : "<span>未发现可用外部工具</span>"
         }
       </div>
+      <div class="result-action-row">
+        <button id="extractCommonArchivesInlineButton" type="button" title="${escapeHtml(commonActionReason)}" aria-label="${escapeHtml(`运行通用解包：${commonActionReason}`)}" ${canExtractCommon ? "" : "disabled"}>运行通用解包</button>
+        <span>${formatNumber(commonArchives.length)} 个普通压缩包候选，${formatNumber(pendingCommonArchives.length)} 个待处理；${escapeHtml(commonActionReason)}</span>
+      </div>
       <div class="section-title compact-title">
         <h3>工具配置</h3>
         <span>${desktopBridge ? "本机路径" : "桌面版可配置"}</span>
@@ -3095,17 +3197,13 @@ function renderExtractorGatewaySummary(archives) {
       <div class="extractor-tool-list">
         ${toolConfigRows || "<p>扫描后会显示外部工具检测结果。</p>"}
       </div>
-      <div class="result-action-row">
-        <button id="extractCommonArchivesInlineButton" type="button" ${canExtractCommon ? "" : "disabled"}>运行通用解包</button>
-        <span>${formatNumber(commonArchives.length)} 个普通压缩包候选，${formatNumber(pendingCommonArchives.length)} 个待处理；${escapeHtml(commonActionReason)}</span>
-      </div>
     </article>
   `;
 }
 
 function renderExtractionRunPreview(run) {
   if (!run) return "";
-  const failedRows = run.rows.filter((row) => row.status === "failed");
+  const problemRows = run.rows.filter((row) => row.status === "failed" || row.status === "policy-blocked");
   const sampleRows = run.rows.slice(0, 8);
   return `
     <article class="output-preview">
@@ -3114,8 +3212,10 @@ function renderExtractionRunPreview(run) {
         <p>${escapeHtml(run.resultRootName)} 已写入你选择的输出文件夹。点“扫描解包输出”后，会把解出的内容重新按 CG、音乐、视频等类别识别。</p>
       </div>
       <div class="output-summary-grid">
+        <span>处理 ${formatNumber(run.processedCount || run.rows.length)} / ${formatNumber(run.candidateCount || run.rows.length)} 个候选</span>
         <span>成功 ${formatNumber(run.extracted)} 个压缩包</span>
         <span>失败 ${formatNumber(run.failed)} 个</span>
+        <span>策略拦截 ${formatNumber(run.policyBlocked || 0)} 个</span>
         <span>未处理 ${formatNumber(run.omitted || 0)} 个</span>
         <span>待处理 ${formatNumber(run.pendingAfter || 0)} 个</span>
         <span>工具 ${escapeHtml(run.tool)}</span>
@@ -3137,8 +3237,8 @@ function renderExtractionRunPreview(run) {
         ${sampleRows.map((row) => `<code>${escapeHtml(`${row.status} | ${row.sourcePath} -> ${row.outputPath} | ${formatNumber(row.fileCount || 0)} files | ${formatBytes(row.byteCount || 0)}`)}</code>`).join("")}
       </div>
       ${
-        failedRows.length
-          ? `<div class="output-error-list">${failedRows.slice(0, 5).map((row) => `<p>${escapeHtml(`${row.sourcePath}: ${row.message}`)}</p>`).join("")}</div>`
+        problemRows.length
+          ? `<div class="output-error-list">${problemRows.slice(0, 5).map((row) => `<p>${escapeHtml(`${row.status} | ${row.sourcePath}: ${row.message}`)}</p>`).join("")}</div>`
           : ""
       }
     </article>
@@ -3150,6 +3250,8 @@ function renderAuthorizedPlugins() {
   const matches = currentRecords.length ? getAuthorizedPluginMatches(currentRecords) : [];
   const runnableMatches = getTransformPluginMatches(currentRecords);
   const demoState = getTrialRunState(pluginDescriptions, matches, runnableMatches);
+  const canRunPlugins = Boolean((sourceHandle || desktopSource) && (outputHandle || desktopOutput) && runnableMatches.length);
+  const pluginActionReason = getAuthorizedPluginActionReason(runnableMatches.length);
   const pluginCards = pluginDescriptions.map((plugin) => `
     <article class="plugin-card">
       <div>
@@ -3228,9 +3330,9 @@ function renderAuthorizedPlugins() {
       <span>不得绕过 DRM / 授权</span>
     </div>
     <div class="plugin-action-row">
-      <button id="runPluginsInlineButton" type="button" ${!(sourceHandle || desktopSource) || !(outputHandle || desktopOutput) || !runnableMatches.length ? "disabled" : ""}>运行授权插件</button>
+      <button id="runPluginsInlineButton" type="button" title="${escapeHtml(pluginActionReason)}" aria-label="${escapeHtml(`运行授权插件：${pluginActionReason}`)}" ${canRunPlugins ? "" : "disabled"}>运行授权插件</button>
       <button id="downloadDiagnosticInlineButton" type="button">导出诊断包</button>
-      <span>${formatNumber(runnableMatches.length)} 个可执行匹配项</span>
+      <span>${formatNumber(runnableMatches.length)} 个可执行匹配项；${escapeHtml(pluginActionReason)}</span>
     </div>
     ${renderTrialRunGuide(demoState)}
     ${renderPluginRunPreview(lastPluginRun)}

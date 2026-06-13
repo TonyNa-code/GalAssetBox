@@ -13,6 +13,7 @@ It is not a universal cracker. It is a local routing layer that detects file typ
    - Current status: can extract to `GalAssetBox_通用解包结果_*/10_通用解包输出/`
    - After extraction, the desktop UI can register `10_通用解包输出/` as the new source and scan it directly.
    - Failed fallback attempts write to temporary directories and are cleaned before the next tool is tried.
+   - Reports include candidate count, processed count, omitted preview, ordinary failures, and policy-blocked rows.
 
 2. Visual novel and game archives
    - Examples: `.xp3`, `.rpa`, `.nsa`, `.arc`, `.pck`, `.dat`, `.pak`
@@ -20,7 +21,7 @@ It is not a universal cracker. It is a local routing layer that detects file typ
    - Current status: route planning only unless a trusted adapter is added
 
 3. Unity assets
-   - Examples: `.assets`, `.unity3d`, `.bundle`
+   - Examples: `.assets`, `.unity3d`, `.bundle`, `.resS`
    - Tool route: AssetRipper
    - Current status: route planning only
 
@@ -41,6 +42,10 @@ It is not a universal cracker. It is a local routing layer that detects file typ
 ## Safety Boundary
 
 The gateway may call local command-line tools, but only inside folders the user selected in the desktop app.
+
+Selected paths and extracted trees are checked with real paths. Symlinks, paths that resolve outside the selected root, excessive file counts, and excessive extracted byte totals are treated as policy-blocked rows rather than ordinary extraction success.
+
+External tools run without shell expansion and receive a narrow environment containing PATH plus basic OS/user temp variables. Full local paths are sanitized before they are written into renderer-facing logs or reports.
 
 It does not:
 

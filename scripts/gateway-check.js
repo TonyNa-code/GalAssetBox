@@ -39,6 +39,10 @@ async function checkSafetyHelpers(tmpRoot) {
   assert.strictEqual(isInsideOrSame("/tmp/root", "/tmp/root2/out"), false);
   assert.strictEqual(sanitizeRuntimeText(`/${"Users"}/example/secret/file.txt failed`), "[local-path] failed");
   assert.strictEqual(sanitizeRuntimeText("C:\\Users\\example\\secret\\file.txt failed"), "[local-path] failed");
+  assert.strictEqual(sanitizeRuntimeText("/Volumes/GameDisk/WhiteAlbum/data.pak failed"), "[local-path] failed");
+  assert.strictEqual(sanitizeRuntimeText("/private/var/folders/run/tool.log failed"), "[local-path] failed");
+  assert.strictEqual(sanitizeRuntimeText("D:\\Games\\Title\\data.arc failed"), "[local-path] failed");
+  assert.strictEqual(sanitizeRuntimeText("\\\\NAS\\Share\\Title\\data.zip failed"), "[local-path] failed");
 
   const extracted = path.join(tmpRoot, "inspect");
   await fs.mkdir(extracted);
@@ -80,6 +84,11 @@ async function checkRoutePlanning(srcRoot) {
   assert.strictEqual(audioPlan.routes[0].route, "game-audio");
   assert.strictEqual(audioPlan.routes[0].status, "tool-missing");
   assert(audioPlan.routes[0].note.includes("vgmstream"), "game audio should require vgmstream");
+
+  const ressPath = path.join(srcRoot, "sharedassets0.resS");
+  await fs.writeFile(ressPath, "Unity resource sidecar");
+  const unityPlan = await gateway.planExtraction(srcRoot, [{ relativePath: "sharedassets0.resS", ext: "ress", size: 22 }]);
+  assert.strictEqual(unityPlan.routes[0].route, "unity");
 }
 
 async function checkRealpathInputGuard(tmpRoot) {
