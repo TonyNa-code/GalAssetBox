@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
-const skipDirs = new Set([".git", "node_modules", "dist", "release", ".playwright-cli"]);
+const skipDirs = new Set([".git", "node_modules", "dist", "release", "output", ".playwright-cli"]);
 const textExts = new Set([
   ".css",
   ".html",
@@ -247,7 +247,7 @@ function checkPrivacyText() {
 
 function checkGeneratedOutputIgnored() {
   const gitignore = readText(".gitignore");
-  const required = ["node_modules/", "dist/", "release/", "*.log"];
+  const required = ["node_modules/", "dist/", "release/", "output/", "*.log"];
   const missing = required.filter((entry) => !gitignore.includes(entry));
   if (missing.length) fail("generated output ignored", `missing ${missing.join(", ")}`);
   else pass("generated output ignored");

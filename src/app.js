@@ -519,12 +519,13 @@ function updateActionState() {
   const hasSelectedCopyRecords = !currentRecords.length || selectedCopyCount > 0;
   const commonArchiveCount = getPendingCommonArchiveRecords().length;
   const hasCommonExtractor = !extractionPlan || (extractionPlan.summary?.ready || 0) > 0;
+  const runnablePluginCount = getTransformPluginMatches(currentRecords).length;
   pickSourceButton.disabled = busy || (!hasDirectoryPicker && !desktopBridge);
   pickOutputButton.disabled = busy || (!hasDirectoryPicker && !desktopBridge);
   scanButton.disabled = busy || !hasSource;
   organizeButton.disabled = busy || !hasSource || !hasOutput || !hasSelectedCopyRecords;
   extractCommonArchivesButton.disabled = busy || !desktopBridge || !hasSource || !hasOutput || !commonArchiveCount || !hasCommonExtractor;
-  runPluginsButton.disabled = busy || !hasSource || !hasOutput;
+  runPluginsButton.disabled = busy || !hasSource || !hasOutput || !runnablePluginCount;
   importPluginButton.disabled = busy;
   importPluginPackageButton.disabled = busy;
   helpSummaryButton.disabled = busy || !currentRecords.length;
@@ -567,18 +568,26 @@ function updatePrimaryActionLabels(hasSource, hasOutput, selectedCopyCount, sele
 
 function setActionButtonLabel(button, actionMessage) {
   const label = button.textContent.trim();
-  const cleanMessage = String(actionMessage || "").trim().replace(/[。！？.!?]+$/, "");
+  const cleanMessage = trimTerminalPunctuation(actionMessage);
   const availability = button.disabled ? "当前不可用" : "可用";
   button.setAttribute("aria-label", cleanMessage ? `${label}：${cleanMessage}，${availability}` : `${label}：${availability}`);
+}
+
+function trimTerminalPunctuation(value) {
+  return String(value || "").trim().replace(/[。！？.!?]+$/, "");
 }
 
 function updateAdvancedActionLabels() {
   for (const [button, description] of ADVANCED_ACTION_DESCRIPTIONS) {
     const label = button.textContent.trim();
     const availability = button.disabled ? "当前不可用" : "可用";
-    const reason = button === extractCommonArchivesButton ? `，${getCommonArchiveActionReason()}` : "";
-    button.setAttribute("aria-label", `${label}：${description}${reason}，${availability}`);
+    let reason = "";
+    if (button === extractCommonArchivesButton) reason = getCommonArchiveActionReason();
+    if (button === runPluginsButton) reason = getAuthorizedPluginActionReason();
+    const cleanReason = trimTerminalPunctuation(reason);
+    button.setAttribute("aria-label", `${label}：${description}${cleanReason ? `，${cleanReason}` : ""}，${availability}`);
     if (button === extractCommonArchivesButton) button.title = getCommonArchiveActionReason();
+    if (button === runPluginsButton) button.title = getAuthorizedPluginActionReason();
   }
 }
 
