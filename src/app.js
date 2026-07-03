@@ -1758,15 +1758,15 @@ async function runAuthorizedPlugins() {
       const match = matches[index];
       try {
         const outputs = await executeAuthorizedPlugin(match);
-        const outputBytes = outputs.reduce((sum, output) => sum + estimatePluginOutputBytes(output), 0);
-        if (pluginOutputBytesThisRun + outputBytes > MAX_PLUGIN_OUTPUT_TOTAL_BYTES) {
-          throw new Error(`插件本轮输出超过总量上限 ${formatBytes(MAX_PLUGIN_OUTPUT_TOTAL_BYTES)}。`);
-        }
-        pluginOutputBytesThisRun += outputBytes;
         for (const output of outputs) {
+          const outputBytes = estimatePluginOutputBytes(output);
+          if (pluginOutputBytesThisRun + outputBytes > MAX_PLUGIN_OUTPUT_TOTAL_BYTES) {
+            throw new Error(`插件本轮输出超过总量上限 ${formatBytes(MAX_PLUGIN_OUTPUT_TOTAL_BYTES)}。`);
+          }
           const targetPath = desktopOutput
             ? await writePluginOutputDesktop(desktopOutput.path, resultRootName, match, output)
             : await writePluginOutput(pluginOutputRoot, match, output);
+          pluginOutputBytesThisRun += outputBytes;
           written += 1;
           runRows.push({
             pluginId: match.pluginId,

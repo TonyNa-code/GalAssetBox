@@ -228,6 +228,15 @@ function checkUserFacingHelpers() {
   const missing = requiredSnippets.filter((snippet) => !app.includes(snippet));
   if (missing.length) fail("user-facing helper features", `missing ${missing.join(", ")}`);
   else pass("user-facing helper features");
+
+  const budgetIncrement = app.indexOf("pluginOutputBytesThisRun += outputBytes");
+  const browserWrite = app.indexOf("await writePluginOutput(pluginOutputRoot, match, output)");
+  const desktopWrite = app.indexOf("await writePluginOutputDesktop(desktopOutput.path, resultRootName, match, output)");
+  if (budgetIncrement > browserWrite && budgetIncrement > desktopWrite) {
+    pass("plugin output budget increments after write");
+  } else {
+    fail("plugin output budget increments after write", "renderer run budget must count successfully written outputs");
+  }
 }
 
 function checkPrivacyText() {
